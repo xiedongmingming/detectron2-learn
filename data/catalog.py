@@ -1,8 +1,11 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
+
 import copy
 import logging
 import types
+
 from collections import UserDict
+
 from typing import List
 
 from detectron2.utils.logger import log_first_n
@@ -35,6 +38,7 @@ class _DatasetCatalog(UserDict):
         """
         assert callable(func), "You must register a function with `DatasetCatalog.register`!"
         assert name not in self, "Dataset '{}' is already registered!".format(name)
+
         self[name] = func
 
     def get(self, name):
@@ -48,13 +52,17 @@ class _DatasetCatalog(UserDict):
             list[dict]: dataset annotations.
         """
         try:
+
             f = self[name]
+
         except KeyError as e:
+
             raise KeyError(
                 "Dataset '{}' is not registered! Available datasets are: {}".format(
                     name, ", ".join(list(self.keys()))
                 )
             ) from e
+
         return f()
 
     def list(self) -> List[str]:
@@ -73,12 +81,14 @@ class _DatasetCatalog(UserDict):
         self.pop(name)
 
     def __str__(self):
+
         return "DatasetCatalog(registered datasets: {})".format(", ".join(self.keys()))
 
     __repr__ = __str__
 
 
 DatasetCatalog = _DatasetCatalog()
+
 DatasetCatalog.__doc__ = (
     _DatasetCatalog.__doc__
     + """
@@ -113,43 +123,56 @@ class Metadata(types.SimpleNamespace):
     }
 
     def __getattr__(self, key):
+
         if key in self._RENAMED:
+
             log_first_n(
                 logging.WARNING,
                 "Metadata '{}' was renamed to '{}'!".format(key, self._RENAMED[key]),
                 n=10,
             )
+
             return getattr(self, self._RENAMED[key])
 
         # "name" exists in every metadata
         if len(self.__dict__) > 1:
+
             raise AttributeError(
                 "Attribute '{}' does not exist in the metadata of dataset '{}'. Available "
                 "keys are {}.".format(key, self.name, str(self.__dict__.keys()))
             )
+
         else:
+
             raise AttributeError(
                 f"Attribute '{key}' does not exist in the metadata of dataset '{self.name}': "
                 "metadata is empty."
             )
 
     def __setattr__(self, key, val):
+
         if key in self._RENAMED:
+
             log_first_n(
                 logging.WARNING,
                 "Metadata '{}' was renamed to '{}'!".format(key, self._RENAMED[key]),
                 n=10,
             )
+
             setattr(self, self._RENAMED[key], val)
 
         # Ensure that metadata of the same name stays consistent
         try:
+
             oldval = getattr(self, key)
+
             assert oldval == val, (
                 "Attribute '{}' in the metadata of '{}' cannot be set "
                 "to a different value!\n{} != {}".format(key, self.name, oldval, val)
             )
+
         except AttributeError:
+
             super().__setattr__(key, val)
 
     def as_dict(self):
@@ -164,7 +187,9 @@ class Metadata(types.SimpleNamespace):
         Set multiple metadata with kwargs.
         """
         for k, v in kwargs.items():
+
             setattr(self, k, v)
+
         return self
 
     def get(self, key, default=None):
@@ -201,9 +226,13 @@ class _MetadataCatalog(UserDict):
             or create an empty one if none is available.
         """
         assert len(name)
+
         r = super().get(name, None)
+
         if r is None:
+
             r = self[name] = Metadata(name=name)
+
         return r
 
     def list(self):
@@ -222,12 +251,14 @@ class _MetadataCatalog(UserDict):
         self.pop(name)
 
     def __str__(self):
+
         return "MetadataCatalog(registered metadata: {})".format(", ".join(self.keys()))
 
     __repr__ = __str__
 
 
 MetadataCatalog = _MetadataCatalog()
+
 MetadataCatalog.__doc__ = (
     _MetadataCatalog.__doc__
     + """

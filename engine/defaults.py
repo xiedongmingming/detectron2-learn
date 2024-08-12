@@ -184,18 +184,24 @@ def default_setup(cfg, args):
         args (argparse.NameSpace): the command line arguments to be logged
     """
     output_dir = _try_get_key(cfg, "OUTPUT_DIR", "output_dir", "train.output_dir")
+
     if comm.is_main_process() and output_dir:
+
         PathManager.mkdirs(output_dir)
 
     rank = comm.get_rank()
+
     setup_logger(output_dir, distributed_rank=rank, name="fvcore")
+
     logger = setup_logger(output_dir, distributed_rank=rank)
 
     logger.info("Rank of current process: {}. World size: {}".format(rank, comm.get_world_size()))
     logger.info("Environment info:\n" + collect_env_info())
 
     logger.info("Command line arguments: " + str(args))
+
     if hasattr(args, "config_file") and args.config_file != "":
+
         logger.info(
             "Contents of args.config_file={}:\n{}".format(
                 args.config_file,
@@ -204,24 +210,34 @@ def default_setup(cfg, args):
         )
 
     if comm.is_main_process() and output_dir:
-        # Note: some of our scripts may expect the existence of
-        # config.yaml in output directory
+        #
+        # Note: some of our scripts may expect the existence of config.yaml in output directory
+        #
         path = os.path.join(output_dir, "config.yaml")
+
         if isinstance(cfg, CfgNode):
+
             logger.info("Running with full config:\n{}".format(_highlight(cfg.dump(), ".yaml")))
+
             with PathManager.open(path, "w") as f:
+
                 f.write(cfg.dump())
+
         else:
+
             LazyConfig.save(cfg, path)
+
         logger.info("Full config saved to {}".format(path))
 
     # make sure each worker has a different, yet deterministic seed if specified
     seed = _try_get_key(cfg, "SEED", "train.seed", default=-1)
+
     seed_all_rng(None if seed < 0 else seed + rank)
 
     # cudnn benchmark has large overhead. It shouldn't be used considering the small size of
     # typical validation set.
     if not (hasattr(args, "eval_only") and args.eval_only):
+
         torch.backends.cudnn.benchmark = _try_get_key(
             cfg, "CUDNN_BENCHMARK", "train.cudnn_benchmark", default=False
         )
@@ -241,6 +257,7 @@ def default_writers(output_dir: str, max_iter: Optional[int] = None):
         list[EventWriter]: a list of :class:`EventWriter` objects.
     """
     PathManager.mkdirs(output_dir)
+
     return [
         # It may not always print what you want to see, since it prints "common" metrics only.
         CommonMetricPrinter(max_iter),
@@ -278,10 +295,14 @@ class DefaultPredictor:
     """
 
     def __init__(self, cfg):
+
         self.cfg = cfg.clone()  # cfg can be modified by model
-        self.model = build_model(self.cfg)
+
+        self.model = build_model(self.cfg)  # CfgNode
         self.model.eval()
+
         if len(cfg.DATASETS.TEST):
+
             self.metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0])
 
         checkpointer = DetectionCheckpointer(self.model)
@@ -292,6 +313,7 @@ class DefaultPredictor:
         )
 
         self.input_format = cfg.INPUT.FORMAT
+
         assert self.input_format in ["RGB", "BGR"], self.input_format
 
     def __call__(self, original_image):
@@ -309,14 +331,19 @@ class DefaultPredictor:
             if self.input_format == "RGB":
                 # whether the model expects BGR inputs or RGB
                 original_image = original_image[:, :, ::-1]
+
             height, width = original_image.shape[:2]
+
             image = self.aug.get_transform(original_image).apply_image(original_image)
+
             image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+
             image.to(self.cfg.MODEL.DEVICE)
 
             inputs = {"image": image, "height": height, "width": width}
 
             predictions = self.model([inputs])[0]
+
             return predictions
 
 

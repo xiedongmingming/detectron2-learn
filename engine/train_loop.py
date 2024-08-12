@@ -111,11 +111,14 @@ class TrainerBase:
     """
 
     def __init__(self) -> None:
+        
         self._hooks: List[HookBase] = []
+
         self.iter: int = 0
         self.start_iter: int = 0
         self.max_iter: int
         self.storage: EventStorage
+
         _log_api_usage("trainer." + self.__class__.__name__)
 
     def register_hooks(self, hooks: List[Optional[HookBase]]) -> None:

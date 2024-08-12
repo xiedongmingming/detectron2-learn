@@ -1,6 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from abc import ABCMeta, abstractmethod
+
 from typing import Dict
+
 import torch.nn as nn
 
 from detectron2.layers import ShapeSpec
@@ -30,7 +32,7 @@ class Backbone(nn.Module, metaclass=ABCMeta):
         pass
 
     @property
-    def size_divisibility(self) -> int:
+    def size_divisibility(self) -> int: # 可分性 /整除性 /可分割 /可除性
         """
         Some backbones require the input height and width to be divisible by a
         specific integer. This is typically true for encoder / decoder type networks
