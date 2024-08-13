@@ -33,7 +33,7 @@ __all__ = [
     "register_coco_instances",
 ]
 
-
+# 加载JSON文件
 def load_coco_json(json_file, image_root, dataset_name=None, extra_annotation_keys=None):
     """
     Load a json file with COCO's instances annotation format.
@@ -74,7 +74,7 @@ def load_coco_json(json_file, image_root, dataset_name=None, extra_annotation_ke
 
     json_file = PathManager.get_local_path(json_file)
 
-    with contextlib.redirect_stdout(io.StringIO()):
+    with contextlib.redirect_stdout(io.StringIO()):  # 重定向标准输出
 
         coco_api = COCO(json_file)
 
@@ -86,7 +86,7 @@ def load_coco_json(json_file, image_root, dataset_name=None, extra_annotation_ke
 
     if dataset_name is not None:
 
-        meta = MetadataCatalog.get(dataset_name)
+        meta = MetadataCatalog.get(dataset_name)  # 如果没有则会创建
 
         cat_ids = sorted(coco_api.getCatIds())
 
@@ -621,14 +621,17 @@ def register_coco_instances(name, metadata, json_file, image_root):
     assert isinstance(name, str), name
     assert isinstance(json_file, (str, os.PathLike)), json_file
     assert isinstance(image_root, (str, os.PathLike)), image_root
-
+    
     # 1. register a function which returns dicts
     DatasetCatalog.register(name, lambda: load_coco_json(json_file, image_root, name))
 
     # 2. Optionally, add metadata about this dataset,
     # since they might be useful in evaluation, visualization or logging
-    MetadataCatalog.get(name).set(
-        json_file=json_file, image_root=image_root, evaluator_type="coco", **metadata
+    MetadataCatalog.get(name).set( # 添加元数据
+        json_file=json_file,
+        image_root=image_root,
+        evaluator_type="coco",
+        **metadata
     )
 
 

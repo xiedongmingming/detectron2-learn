@@ -27,6 +27,7 @@ def get_world_size() -> int:
 
 
 def get_rank() -> int:
+    #
     if not dist.is_available():
         return 0
     if not dist.is_initialized():
@@ -100,6 +101,7 @@ def get_local_size() -> int:
 
 
 def is_main_process() -> bool:
+    
     return get_rank() == 0
 
 

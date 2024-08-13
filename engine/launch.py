@@ -36,12 +36,12 @@ def launch(
     # Should be num_processes_per_machine, but kept for compatibility.
     num_gpus_per_machine,
     num_machines=1,
-    machine_rank=0,
+    machine_rank=0, # 当前机器的编号
     dist_url=None,
     args=(),
     timeout=DEFAULT_TIMEOUT,
 ):
-    """
+    """多进程或分布式训练（在涉及的机器上都要运行该方法-派生子进程）
     Launch multi-process or distributed training.
     This function must be called on all machines involved in the training.
     It will spawn child processes (defined by ``num_gpus_per_machine``) on each machine.
@@ -58,14 +58,14 @@ def launch(
         timeout (timedelta): timeout of the distributed workers
         args (tuple): arguments passed to main_func
     """
-    world_size = num_machines * num_gpus_per_machine
+    world_size = num_machines * num_gpus_per_machine # 机器数乘以每个机器的GPU数
 
-    if world_size > 1:
+    if world_size > 1:  # 分布训练
 
         # https://github.com/pytorch/pytorch/pull/14391
         # TODO prctl in spawned processes
 
-        if dist_url == "auto":
+        if dist_url == "auto": # 只支持单机多卡情况
 
             assert num_machines == 1, "dist_url=auto not supported in multi-machine jobs."
 
@@ -96,7 +96,7 @@ def launch(
             daemon=False,
         )
 
-    else:
+    else: # 单机单卡
 
         main_func(*args)
 

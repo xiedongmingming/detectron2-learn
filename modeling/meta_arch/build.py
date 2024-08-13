@@ -18,7 +18,7 @@ def build_model(cfg):  # 只是构造模型（并未加载权重参数）
     Build the whole model architecture, defined by ``cfg.MODEL.META_ARCHITECTURE``.
     Note that it does not load any weights from ``cfg``.
     """
-    meta_arch = cfg.MODEL.META_ARCHITECTURE # 根据超参数获得网络结构的名字
+    meta_arch = cfg.MODEL.META_ARCHITECTURE # 根据超参数获得网络结构的名字，例如：VLGeneralizedRCNN
 
     model = META_ARCH_REGISTRY.get(meta_arch)(cfg)
 

@@ -80,7 +80,7 @@ class GeneralizedRCNN(nn.Module):
         ), f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
 
     @classmethod
-    def from_config(cls, cfg):
+    def from_config(cls, cfg):  # 模型创建入口文件
 
         backbone = build_backbone(cfg)  # build_vit_fpn_backbone
 
