@@ -225,23 +225,31 @@ class DatasetFromList(data.Dataset):
         """
         self._lst = lst
         self._copy = copy
+
         if not isinstance(serialize, (bool, Callable)):
+
             raise TypeError(f"Unsupported type for argument `serailzie`: {serialize}")
+
         self._serialize = serialize is not False
 
         if self._serialize:
+
             serialize_method = (
                 serialize
                 if isinstance(serialize, Callable)
                 else _DEFAULT_DATASET_FROM_LIST_SERIALIZE_METHOD
             )
+
             logger.info(f"Serializing the dataset using: {serialize_method}")
+
             self._lst = serialize_method(self._lst)
 
     def __len__(self):
+        #
         return len(self._lst)
 
     def __getitem__(self, idx):
+        #
         if self._copy and not self._serialize:
             return copy.deepcopy(self._lst[idx])
         else:
@@ -276,13 +284,16 @@ class ToIterableDataset(data.IterableDataset):
             shard_chunk_size: when sharding the sampler, each worker will
         """
         assert not isinstance(dataset, data.IterableDataset), dataset
+
         assert isinstance(sampler, Sampler), sampler
+
         self.dataset = dataset
         self.sampler = sampler
         self.shard_sampler = shard_sampler
         self.shard_chunk_size = shard_chunk_size
 
     def __iter__(self):
+        #
         if not self.shard_sampler:
             sampler = self.sampler
         else:
@@ -292,10 +303,13 @@ class ToIterableDataset(data.IterableDataset):
             # each worker. The assumption is that sampler is cheap to iterate so it's fine to
             # discard ids in workers.
             sampler = _shard_iterator_dataloader_worker(self.sampler, self.shard_chunk_size)
+
         for idx in sampler:
+            #
             yield self.dataset[idx]
 
     def __len__(self):
+        #
         return len(self.sampler)
 
 
@@ -326,14 +340,20 @@ class AspectRatioGroupedDataset(data.IterableDataset):
         # Can add support for more aspect ratio groups, but doesn't seem useful
 
     def __iter__(self):
+        #
         for d in self.dataset:
+
             w, h = d["width"], d["height"]
+
             bucket_id = 0 if w > h else 1
+
             bucket = self._buckets[bucket_id]
             bucket.append(d)
+
             if len(bucket) == self.batch_size:
+                #
                 data = bucket[:]
-                # Clear bucket first, because code after yield is not
-                # guaranteed to execute
+                # Clear bucket first, because code after yield is not guaranteed to execute
                 del bucket[:]
+                
                 yield data

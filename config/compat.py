@@ -132,14 +132,21 @@ def _rename(cfg: CN, old: str, new: str) -> None:
         return cur
 
     def _del(key_seq: List[str]) -> None:
+
         cur = cfg
+
         for k in key_seq[:-1]:
+
             cur = cur[k]
+
         del cur[key_seq[-1]]
+
         if len(cur) == 0 and len(key_seq) > 1:
+
             _del(key_seq[:-1])
 
     _set(new_keys, _get(old_keys))
+
     _del(old_keys)
 
 
@@ -152,16 +159,21 @@ class _RenameConverter:
 
     @classmethod
     def upgrade(cls, cfg: CN) -> None:
+
         for old, new in cls.RENAME:
+
             _rename(cfg, old, new)
 
     @classmethod
     def downgrade(cls, cfg: CN) -> None:
+
         for old, new in cls.RENAME[::-1]:
+
             _rename(cfg, new, old)
 
 
 class ConverterV1(_RenameConverter):
+
     RENAME = [("MODEL.RPN_HEAD.NAME", "MODEL.RPN.HEAD_NAME")]
 
 
@@ -202,28 +214,37 @@ class ConverterV2(_RenameConverter):
 
     @classmethod
     def upgrade(cls, cfg: CN) -> None:
+
         super().upgrade(cfg)
 
         if cfg.MODEL.META_ARCHITECTURE == "RetinaNet":
+
             _rename(
                 cfg, "MODEL.RETINANET.ANCHOR_ASPECT_RATIOS", "MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS"
             )
             _rename(cfg, "MODEL.RETINANET.ANCHOR_SIZES", "MODEL.ANCHOR_GENERATOR.SIZES")
+
             del cfg["MODEL"]["RPN"]["ANCHOR_SIZES"]
             del cfg["MODEL"]["RPN"]["ANCHOR_ASPECT_RATIOS"]
+
         else:
+
             _rename(cfg, "MODEL.RPN.ANCHOR_ASPECT_RATIOS", "MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS")
             _rename(cfg, "MODEL.RPN.ANCHOR_SIZES", "MODEL.ANCHOR_GENERATOR.SIZES")
+
             del cfg["MODEL"]["RETINANET"]["ANCHOR_SIZES"]
             del cfg["MODEL"]["RETINANET"]["ANCHOR_ASPECT_RATIOS"]
+
         del cfg["MODEL"]["RETINANET"]["ANCHOR_STRIDES"]
 
     @classmethod
     def downgrade(cls, cfg: CN) -> None:
+        #
         super().downgrade(cfg)
 
         _rename(cfg, "MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS", "MODEL.RPN.ANCHOR_ASPECT_RATIOS")
         _rename(cfg, "MODEL.ANCHOR_GENERATOR.SIZES", "MODEL.RPN.ANCHOR_SIZES")
+
         cfg.MODEL.RETINANET.ANCHOR_ASPECT_RATIOS = cfg.MODEL.RPN.ANCHOR_ASPECT_RATIOS
         cfg.MODEL.RETINANET.ANCHOR_SIZES = cfg.MODEL.RPN.ANCHOR_SIZES
         cfg.MODEL.RETINANET.ANCHOR_STRIDES = []  # this is not used anywhere in any version

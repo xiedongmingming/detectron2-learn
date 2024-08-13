@@ -1,21 +1,30 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Facebook, Inc. and its affiliates.
+
 import concurrent.futures
 import logging
 import numpy as np
 import time
 import weakref
+
 from typing import List, Mapping, Optional
+
 import torch
+
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 import detectron2.utils.comm as comm
+
 from detectron2.utils.events import EventStorage, get_event_storage
 from detectron2.utils.logger import _log_api_usage
 
 __all__ = ["HookBase", "TrainerBase", "SimpleTrainer", "AMPTrainer"]
 
-
+# 这是一个HOOK的基类，用于指定在训练前后或者每一个STEP前后需要做什么事情，所以根据特定的需求需要对如下四种方法做不同的定义:
+# before_train
+# after_train
+# before_step
+# after_step
 class HookBase:
     """
     Base class for hooks that can be registered with :class:`TrainerBase`.
@@ -90,7 +99,10 @@ class HookBase:
         """
         return {}
 
-
+# 该类中定义的函数可以归纳成三种：
+# register_hooksc
+# before_train、after_train、before_step、after_step、run_step
+# train
 class TrainerBase:
     """
     Base class for iterative trainer with hooks.
@@ -117,26 +129,30 @@ class TrainerBase:
         self.iter: int = 0
         self.start_iter: int = 0
         self.max_iter: int
-        self.storage: EventStorage
+        
+        self.storage: EventStorage  # 存放METRICS的
 
         _log_api_usage("trainer." + self.__class__.__name__)
 
     def register_hooks(self, hooks: List[Optional[HookBase]]) -> None:
         """
-        Register hooks to the trainer. The hooks are executed in the order
-        they are registered.
+        Register hooks to the trainer. The hooks are executed in the order they are registered.
 
         Args:
             hooks (list[Optional[HookBase]]): list of hooks
         """
         hooks = [h for h in hooks if h is not None]
+        
         for h in hooks:
+            
             assert isinstance(h, HookBase)
+            
             # To avoid circular reference, hooks and trainer cannot own each other.
             # This normally does not matter, but will cause memory leak if the
             # involved objects contain __del__:
             # See http://engineering.hearsaysocial.com/2013/06/16/circular-references-in-python/
             h.trainer = weakref.proxy(self)
+            
         self._hooks.extend(hooks)
 
     def train(self, start_iter: int, max_iter: int):
@@ -148,81 +164,126 @@ class TrainerBase:
         logger.info("Starting training from iteration {}".format(start_iter))
 
         self.iter = self.start_iter = start_iter
+        
         self.max_iter = max_iter
 
         with EventStorage(start_iter) as self.storage:
+            
             try:
+                
                 self.before_train()
+                
                 for self.iter in range(start_iter, max_iter):
+                    
                     self.before_step()
                     self.run_step()
                     self.after_step()
+                    
                 # self.iter == max_iter can be used by `after_train` to
                 # tell whether the training successfully finished or failed
                 # due to exceptions.
                 self.iter += 1
+                
             except Exception:
+                
                 logger.exception("Exception during training:")
+                
                 raise
+            
             finally:
+                
                 self.after_train()
 
     def before_train(self):
+        
         for h in self._hooks:
+            
             h.before_train()
 
     def after_train(self):
+        
         self.storage.iter = self.iter
+        
         for h in self._hooks:
+            
             h.after_train()
 
     def before_step(self):
-        # Maintain the invariant that storage.iter == trainer.iter
-        # for the entire execution of each step
+        #
+        # Maintain the invariant that storage.iter == trainer.iter for the entire execution of each step
+        #
         self.storage.iter = self.iter
 
         for h in self._hooks:
+            
             h.before_step()
 
     def after_backward(self):
+        
         for h in self._hooks:
+        
             h.after_backward()
 
     def after_step(self):
+        
         for h in self._hooks:
+        
             h.after_step()
 
     def run_step(self):
+        
         raise NotImplementedError
 
     def state_dict(self):
+        
         ret = {"iteration": self.iter}
+        
         hooks_state = {}
+        
         for h in self._hooks:
+        
             sd = h.state_dict()
+        
             if sd:
+        
                 name = type(h).__qualname__
+        
                 if name in hooks_state:
+        
                     # TODO handle repetitive stateful hooks
                     continue
+        
                 hooks_state[name] = sd
+        
         if hooks_state:
+        
             ret["hooks"] = hooks_state
+        
         return ret
 
     def load_state_dict(self, state_dict):
+        
         logger = logging.getLogger(__name__)
+        
         self.iter = state_dict["iteration"]
+        
         for key, value in state_dict.get("hooks", {}).items():
+        
             for h in self._hooks:
+        
                 try:
                     name = type(h).__qualname__
                 except AttributeError:
                     continue
+        
                 if name == key:
+                    
                     h.load_state_dict(value)
+                    
                     break
+            
             else:
+            
                 logger.warning(f"Cannot find the hook '{key}', its state_dict is ignored.")
 
 
@@ -311,17 +372,24 @@ class SimpleTrainer(TrainerBase):
         If you want to do something with the losses, you can wrap the model.
         """
         loss_dict = self.model(data)
+
         if isinstance(loss_dict, torch.Tensor):
+
             losses = loss_dict
+
             loss_dict = {"total_loss": loss_dict}
+
         else:
+
             losses = sum(loss_dict.values())
+
         if not self.zero_grad_before_forward:
             """
             If you need to accumulate gradients or do something similar, you can
             wrap the optimizer with your custom `zero_grad()` method.
             """
             self.optimizer.zero_grad()
+
         losses.backward()
 
         self.after_backward()
@@ -345,7 +413,9 @@ class SimpleTrainer(TrainerBase):
     def _data_loader_iter(self):
         # only create the data loader iterator when it is used
         if self._data_loader_iter_obj is None:
+
             self._data_loader_iter_obj = iter(self.data_loader)
+
         return self._data_loader_iter_obj
 
     def reset_data_loader(self, data_loader_builder):
@@ -354,7 +424,9 @@ class SimpleTrainer(TrainerBase):
         by calling `data_loader_builder` (without argument).
         """
         del self.data_loader
+
         data_loader = data_loader_builder()
+
         self.data_loader = data_loader
         self._data_loader_iter_obj = None
 
@@ -365,14 +437,21 @@ class SimpleTrainer(TrainerBase):
         prefix: str = "",
         iter: Optional[int] = None,
     ) -> None:
+        #
         logger = logging.getLogger(__name__)
 
         iter = self.iter if iter is None else iter
+
         if (iter + 1) % self.gather_metric_period == 0:
+
             try:
+
                 SimpleTrainer.write_metrics(loss_dict, data_time, iter, prefix)
+
             except Exception:
+
                 logger.exception("Exception in writing metrics: ")
+
                 raise
 
     @staticmethod
@@ -401,17 +480,22 @@ class SimpleTrainer(TrainerBase):
         all_metrics_dict = comm.gather(metrics_dict)
 
         if comm.is_main_process():
-            # data_time among workers can have high variance. The actual latency
-            # caused by data_time is the maximum among workers.
+            #
+            # data_time among workers can have high variance. The actual latency caused by data_time is the maximum among workers.
+            #
             data_time = np.max([x.pop("data_time") for x in all_metrics_dict])
+
             storage.put_scalar("data_time", data_time, cur_iter=cur_iter)
 
             # average the rest metrics
             metrics_dict = {
                 k: np.mean([x[k] for x in all_metrics_dict]) for k in all_metrics_dict[0].keys()
             }
+
             total_losses_reduced = sum(metrics_dict.values())
+
             if not np.isfinite(total_losses_reduced):
+                #
                 raise FloatingPointError(
                     f"Loss became infinite or NaN at iteration={cur_iter}!\n"
                     f"loss_dict = {metrics_dict}"
@@ -420,20 +504,29 @@ class SimpleTrainer(TrainerBase):
             storage.put_scalar(
                 "{}total_loss".format(prefix), total_losses_reduced, cur_iter=cur_iter
             )
+
             if len(metrics_dict) > 1:
+                #
                 storage.put_scalars(cur_iter=cur_iter, **metrics_dict)
 
     def state_dict(self):
+        #
         ret = super().state_dict()
+
         ret["optimizer"] = self.optimizer.state_dict()
+
         return ret
 
     def load_state_dict(self, state_dict):
+        #
         super().load_state_dict(state_dict)
+
         self.optimizer.load_state_dict(state_dict["optimizer"])
 
     def after_train(self):
+        #
         super().after_train()
+
         self.concurrent_executor.shutdown(wait=True)
 
 

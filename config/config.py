@@ -4,11 +4,12 @@
 import functools
 import inspect
 import logging
+
 from fvcore.common.config import CfgNode as _CfgNode
 
 from detectron2.utils.file_io import PathManager
 
-
+# detrctron2.config.CfgNode->fcvore.common.config.CfgNode->yacs.config.CfgNode->dict
 class CfgNode(_CfgNode):
     """
     The same as `fvcore.common.config.CfgNode`, but different in:
@@ -31,6 +32,7 @@ class CfgNode(_CfgNode):
 
     @classmethod
     def _open_cfg(cls, filename):
+        #
         return PathManager.open(filename, "r")
 
     # Note that the default value of allow_unsafe is changed to True
@@ -43,6 +45,7 @@ class CfgNode(_CfgNode):
             allow_unsafe: allow unsafe yaml syntax
         """
         assert PathManager.isfile(cfg_filename), f"Config file '{cfg_filename}' does not exist!"
+        
         loaded_cfg = self.load_yaml_with_base(cfg_filename, allow_unsafe=allow_unsafe)
         loaded_cfg = type(self)(loaded_cfg)
 
@@ -50,6 +53,7 @@ class CfgNode(_CfgNode):
         from .defaults import _C
 
         latest_ver = _C.VERSION
+        
         assert (
             latest_ver == self.VERSION
         ), "CfgNode.merge_from_file is only allowed on a config object of latest version!"
@@ -57,10 +61,13 @@ class CfgNode(_CfgNode):
         logger = logging.getLogger(__name__)
 
         loaded_ver = loaded_cfg.get("VERSION", None)
+        
         if loaded_ver is None:
+            #
             from .compat import guess_version
 
             loaded_ver = guess_version(loaded_cfg, cfg_filename)
+            
         assert loaded_ver <= self.VERSION, "Cannot merge a v{} config into a v{} config.".format(
             loaded_ver, self.VERSION
         )
@@ -77,10 +84,13 @@ class CfgNode(_CfgNode):
                     loaded_ver, cfg_filename, self.VERSION
                 )
             )
+            
             # To convert, first obtain a full config at an old version
             old_self = downgrade_config(self, to_version=loaded_ver)
             old_self.merge_from_other_cfg(loaded_cfg)
+            
             new_config = upgrade_config(old_self)
+            
             self.clear()
             self.update(new_config)
 
@@ -123,7 +133,9 @@ def set_global_cfg(cfg: CfgNode) -> None:
     This is a hacky feature introduced for quick prototyping / research exploration.
     """
     global global_cfg
+    
     global_cfg.clear()
+    
     global_cfg.update(cfg)
 
 
@@ -168,6 +180,7 @@ def configurable(init_func=None, *, from_config=None):
     """
 
     if init_func is not None:
+        
         assert (
             inspect.isfunction(init_func)
             and from_config is None
@@ -176,17 +189,23 @@ def configurable(init_func=None, *, from_config=None):
 
         @functools.wraps(init_func)
         def wrapped(self, *args, **kwargs):
+            
             try:
                 from_config_func = type(self).from_config
             except AttributeError as e:
+                
                 raise AttributeError(
                     "Class with @configurable must have a 'from_config' classmethod."
                 ) from e
+            
             if not inspect.ismethod(from_config_func):
+                
                 raise TypeError("Class with @configurable must have a 'from_config' classmethod.")
 
             if _called_with_cfg(*args, **kwargs):
+                
                 explicit_args = _get_args_from_config(from_config_func, *args, **kwargs)
+                
                 init_func(self, **explicit_args)
             else:
                 init_func(self, *args, **kwargs)
@@ -194,22 +213,32 @@ def configurable(init_func=None, *, from_config=None):
         return wrapped
 
     else:
+        
         if from_config is None:
+            
             return configurable  # @configurable() is made equivalent to @configurable
+       
         assert inspect.isfunction(
             from_config
         ), "from_config argument of configurable must be a function!"
 
         def wrapper(orig_func):
+            
             @functools.wraps(orig_func)
             def wrapped(*args, **kwargs):
+                
                 if _called_with_cfg(*args, **kwargs):
+                    
                     explicit_args = _get_args_from_config(from_config, *args, **kwargs)
+                    
                     return orig_func(**explicit_args)
+                
                 else:
+                    
                     return orig_func(*args, **kwargs)
 
             wrapped.from_config = from_config
+            
             return wrapped
 
         return wrapper
@@ -223,28 +252,41 @@ def _get_args_from_config(from_config_func, *args, **kwargs):
         dict: arguments to be used for cls.__init__
     """
     signature = inspect.signature(from_config_func)
+    
     if list(signature.parameters.keys())[0] != "cfg":
+        
         if inspect.isfunction(from_config_func):
             name = from_config_func.__name__
         else:
             name = f"{from_config_func.__self__}.from_config"
+            
         raise TypeError(f"{name} must take 'cfg' as the first argument!")
+    
     support_var_arg = any(
         param.kind in [param.VAR_POSITIONAL, param.VAR_KEYWORD]
         for param in signature.parameters.values()
     )
+    
     if support_var_arg:  # forward all arguments to from_config, if from_config accepts them
         ret = from_config_func(*args, **kwargs)
     else:
+        
         # forward supported arguments to from_config
         supported_arg_names = set(signature.parameters.keys())
+        
         extra_kwargs = {}
+        
         for name in list(kwargs.keys()):
+            
             if name not in supported_arg_names:
+                
                 extra_kwargs[name] = kwargs.pop(name)
+                
         ret = from_config_func(*args, **kwargs)
+        
         # forward the other arguments to __init__
         ret.update(extra_kwargs)
+        
     return ret
 
 
@@ -257,9 +299,13 @@ def _called_with_cfg(*args, **kwargs):
     from omegaconf import DictConfig
 
     if len(args) and isinstance(args[0], (_CfgNode, DictConfig)):
+        
         return True
+    
     if isinstance(kwargs.pop("cfg", None), (_CfgNode, DictConfig)):
+        
         return True
+    
     # `from_config`'s first argument is forced to be "cfg".
     # So the above check covers all cases.
     return False

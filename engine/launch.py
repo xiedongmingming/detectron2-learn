@@ -30,7 +30,7 @@ def _find_free_port():
     # NOTE: there is still a chance the port could be taken by other processes.
     return port
 
-
+# 可以理解成代码启动器，可以根据命令决定是否采用分布式训练（或者单机多卡）或者单机单卡训练。
 def launch(
     main_func,
     # Should be num_processes_per_machine, but kept for compatibility.
