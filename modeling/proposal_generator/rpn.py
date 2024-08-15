@@ -1,7 +1,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from typing import Dict, List, Optional, Tuple, Union
+
 import torch
 import torch.nn.functional as F
+
 from torch import nn
 
 from detectron2.config import configurable
@@ -60,6 +62,7 @@ def build_rpn_head(cfg, input_shape):
     Build an RPN head defined by `cfg.MODEL.RPN.HEAD_NAME`.
     """
     name = cfg.MODEL.RPN.HEAD_NAME
+    
     return RPN_HEAD_REGISTRY.get(name)(cfg, input_shape)
 
 
@@ -93,37 +96,55 @@ class StandardRPNHead(nn.Module):
                 as input channels.
         """
         super().__init__()
+        
         cur_channels = in_channels
-        # Keeping the old variable names and structure for backwards compatiblity.
-        # Otherwise the old checkpoints will fail to load.
+        
+        # Keeping the old variable names and structure for backwards compatiblity. Otherwise the old checkpoints will fail to load.
         if len(conv_dims) == 1:
+            
             out_channels = cur_channels if conv_dims[0] == -1 else conv_dims[0]
+            
             # 3x3 conv for the hidden representation
             self.conv = self._get_rpn_conv(cur_channels, out_channels)
+            
             cur_channels = out_channels
+            
         else:
+            
             self.conv = nn.Sequential()
+            
             for k, conv_dim in enumerate(conv_dims):
+                
                 out_channels = cur_channels if conv_dim == -1 else conv_dim
+                
                 if out_channels <= 0:
+                    
                     raise ValueError(
                         f"Conv output channels should be greater than 0. Got {out_channels}"
                     )
+                
                 conv = self._get_rpn_conv(cur_channels, out_channels)
+                
                 self.conv.add_module(f"conv{k}", conv)
+                
                 cur_channels = out_channels
+                
         # 1x1 conv for predicting objectness logits
         self.objectness_logits = nn.Conv2d(cur_channels, num_anchors, kernel_size=1, stride=1)
+        
         # 1x1 conv for predicting box2box transform deltas
         self.anchor_deltas = nn.Conv2d(cur_channels, num_anchors * box_dim, kernel_size=1, stride=1)
 
         # Keeping the order of weights initialization same for backwards compatiblility.
         for layer in self.modules():
+            
             if isinstance(layer, nn.Conv2d):
+                
                 nn.init.normal_(layer.weight, std=0.01)
                 nn.init.constant_(layer.bias, 0)
 
     def _get_rpn_conv(self, in_channels, out_channels):
+        
         return Conv2d(
             in_channels,
             out_channels,
@@ -135,19 +156,26 @@ class StandardRPNHead(nn.Module):
 
     @classmethod
     def from_config(cls, cfg, input_shape):
+        
         # Standard RPN is shared across levels:
         in_channels = [s.channels for s in input_shape]
+        
         assert len(set(in_channels)) == 1, "Each level must have the same channel!"
+        
         in_channels = in_channels[0]
 
         # RPNHead should take the same input as anchor generator
         # NOTE: it assumes that creating an anchor generator does not have unwanted side effect.
         anchor_generator = build_anchor_generator(cfg, input_shape)
+        
         num_anchors = anchor_generator.num_anchors
+        
         box_dim = anchor_generator.box_dim
+        
         assert (
             len(set(num_anchors)) == 1
         ), "Each level must have the same number of anchors per spatial position"
+        
         return {
             "in_channels": in_channels,
             "num_anchors": num_anchors[0],
@@ -169,11 +197,17 @@ class StandardRPNHead(nn.Module):
                 to proposals.
         """
         pred_objectness_logits = []
+        
         pred_anchor_deltas = []
+        
         for x in features:
+            
             t = self.conv(x)
+            
             pred_objectness_logits.append(self.objectness_logits(t))
+            
             pred_anchor_deltas.append(self.anchor_deltas(t))
+            
         return pred_objectness_logits, pred_anchor_deltas
 
 
@@ -236,28 +270,37 @@ class RPN(nn.Module):
                 use L1 loss. Only used when `box_reg_loss_type` is "smooth_l1"
         """
         super().__init__()
+        
         self.in_features = in_features
+        
         self.rpn_head = head
+        
         self.anchor_generator = anchor_generator
         self.anchor_matcher = anchor_matcher
         self.box2box_transform = box2box_transform
         self.batch_size_per_image = batch_size_per_image
         self.positive_fraction = positive_fraction
+        
         # Map from self.training state to train/test settings
         self.pre_nms_topk = {True: pre_nms_topk[0], False: pre_nms_topk[1]}
         self.post_nms_topk = {True: post_nms_topk[0], False: post_nms_topk[1]}
         self.nms_thresh = nms_thresh
         self.min_box_size = float(min_box_size)
         self.anchor_boundary_thresh = anchor_boundary_thresh
+        
         if isinstance(loss_weight, float):
+            
             loss_weight = {"loss_rpn_cls": loss_weight, "loss_rpn_loc": loss_weight}
+            
         self.loss_weight = loss_weight
         self.box_reg_loss_type = box_reg_loss_type
         self.smooth_l1_beta = smooth_l1_beta
 
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
+        
         in_features = cfg.MODEL.RPN.IN_FEATURES
+        
         ret = {
             "in_features": in_features,
             "min_box_size": cfg.MODEL.PROPOSAL_GENERATOR.MIN_SIZE,
@@ -281,7 +324,9 @@ class RPN(nn.Module):
         ret["anchor_matcher"] = Matcher(
             cfg.MODEL.RPN.IOU_THRESHOLDS, cfg.MODEL.RPN.IOU_LABELS, allow_low_quality_matches=True
         )
+        
         ret["head"] = build_rpn_head(cfg, [input_shape[f] for f in in_features])
+        
         return ret
 
     def _subsample_labels(self, label):
@@ -296,10 +341,13 @@ class RPN(nn.Module):
         pos_idx, neg_idx = subsample_labels(
             label, self.batch_size_per_image, self.positive_fraction, 0
         )
+        
         # Fill with the ignore label (-1), then set positive and negative labels
         label.fill_(-1)
+        
         label.scatter_(0, pos_idx, 1)
         label.scatter_(0, neg_idx, 0)
+        
         return label
 
     @torch.jit.unused
@@ -325,11 +373,15 @@ class RPN(nn.Module):
         anchors = Boxes.cat(anchors)
 
         gt_boxes = [x.gt_boxes for x in gt_instances]
+        
         image_sizes = [x.image_size for x in gt_instances]
+        
         del gt_instances
 
         gt_labels = []
+        
         matched_gt_boxes = []
+        
         for image_size_i, gt_boxes_i in zip(image_sizes, gt_boxes):
             """
             image_size_i: (h, w) for the i-th image
@@ -337,15 +389,19 @@ class RPN(nn.Module):
             """
 
             match_quality_matrix = retry_if_cuda_oom(pairwise_iou)(gt_boxes_i, anchors)
+            
             matched_idxs, gt_labels_i = retry_if_cuda_oom(self.anchor_matcher)(match_quality_matrix)
+            
             # Matching is memory-expensive and may result in CPU tensors. But the result is small
             gt_labels_i = gt_labels_i.to(device=gt_boxes_i.device)
+            
             del match_quality_matrix
 
             if self.anchor_boundary_thresh >= 0:
                 # Discard anchors that go out of the boundaries of the image
                 # NOTE: This is legacy functionality that is turned off by default in Detectron2
                 anchors_inside_image = anchors.inside_box(image_size_i, self.anchor_boundary_thresh)
+                
                 gt_labels_i[~anchors_inside_image] = -1
 
             # A vector of labels (-1, 0, 1) for each anchor
@@ -359,7 +415,9 @@ class RPN(nn.Module):
                 matched_gt_boxes_i = gt_boxes_i[matched_idxs].tensor
 
             gt_labels.append(gt_labels_i)  # N,AHW
+            
             matched_gt_boxes.append(matched_gt_boxes_i)
+            
         return gt_labels, matched_gt_boxes
 
     @torch.jit.unused
@@ -392,13 +450,18 @@ class RPN(nn.Module):
                 `loss_rpn_loc` for proposal localization.
         """
         num_images = len(gt_labels)
+        
         gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
 
         # Log the number of positive/negative anchors per-image that's used in training
         pos_mask = gt_labels == 1
+        
         num_pos_anchors = pos_mask.sum().item()
+        
         num_neg_anchors = (gt_labels == 0).sum().item()
+        
         storage = get_event_storage()
+        
         storage.put_scalar("rpn/num_pos_anchors", num_pos_anchors / num_images)
         storage.put_scalar("rpn/num_neg_anchors", num_neg_anchors / num_images)
 
@@ -413,19 +476,24 @@ class RPN(nn.Module):
         )
 
         valid_mask = gt_labels >= 0
+        
         objectness_loss = F.binary_cross_entropy_with_logits(
             cat(pred_objectness_logits, dim=1)[valid_mask],
             gt_labels[valid_mask].to(torch.float32),
             reduction="sum",
         )
+        
         normalizer = self.batch_size_per_image * num_images
+        
         losses = {
             "loss_rpn_cls": objectness_loss / normalizer,
             # The original Faster R-CNN paper uses a slightly different normalizer
             # for loc loss. But it doesn't matter in practice
             "loss_rpn_loc": localization_loss / normalizer,
         }
+        
         losses = {k: v * self.loss_weight.get(k, 1.0) for k, v in losses.items()}
+        
         return losses
 
     def forward(
@@ -449,15 +517,18 @@ class RPN(nn.Module):
             loss: dict[Tensor] or None
         """
         features = [features[f] for f in self.in_features]
+        
         anchors = self.anchor_generator(features)
 
         pred_objectness_logits, pred_anchor_deltas = self.rpn_head(features)
+        
         # Transpose the Hi*Wi*A dimension to the middle:
         pred_objectness_logits = [
             # (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
             score.permute(0, 2, 3, 1).flatten(1)
             for score in pred_objectness_logits
         ]
+        
         pred_anchor_deltas = [
             # (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B) -> (N, Hi*Wi*A, B)
             x.view(x.shape[0], -1, self.anchor_generator.box_dim, x.shape[-2], x.shape[-1])
@@ -467,16 +538,23 @@ class RPN(nn.Module):
         ]
 
         if self.training:
+            
             assert gt_instances is not None, "RPN requires gt_instances in training!"
+            
             gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, gt_instances)
+            
             losses = self.losses(
                 anchors, pred_objectness_logits, gt_labels, pred_anchor_deltas, gt_boxes
             )
+            
         else:
+            
             losses = {}
+            
         proposals = self.predict_proposals(
             anchors, pred_objectness_logits, pred_anchor_deltas, images.image_sizes
         )
+        
         return proposals, losses
 
     def predict_proposals(
@@ -499,7 +577,9 @@ class RPN(nn.Module):
         # This approach ignores the derivative w.r.t. the proposal boxes’ coordinates that
         # are also network responses.
         with torch.no_grad():
+            
             pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
+            
             return find_top_rpn_proposals(
                 pred_proposals,
                 pred_objectness_logits,
@@ -520,14 +600,22 @@ class RPN(nn.Module):
                 (N, Hi*Wi*A, B)
         """
         N = pred_anchor_deltas[0].shape[0]
+        
         proposals = []
+        
         # For each feature map
         for anchors_i, pred_anchor_deltas_i in zip(anchors, pred_anchor_deltas):
+            
             B = anchors_i.tensor.size(1)
+            
             pred_anchor_deltas_i = pred_anchor_deltas_i.reshape(-1, B)
+            
             # Expand anchors to shape (N*Hi*Wi*A, B)
             anchors_i = anchors_i.tensor.unsqueeze(0).expand(N, -1, -1).reshape(-1, B)
+            
             proposals_i = self.box2box_transform.apply_deltas(pred_anchor_deltas_i, anchors_i)
+            
             # Append feature map proposals with shape (N, Hi*Wi*A, B)
             proposals.append(proposals_i.view(N, -1, B))
+            
         return proposals

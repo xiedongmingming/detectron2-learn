@@ -64,15 +64,25 @@ def select_foreground_proposals(
     """
     assert isinstance(proposals, (list, tuple))
     assert isinstance(proposals[0], Instances)
+
     assert proposals[0].has("gt_classes")
+
     fg_proposals = []
+
     fg_selection_masks = []
+
     for proposals_per_image in proposals:
+
         gt_classes = proposals_per_image.gt_classes
+
         fg_selection_mask = (gt_classes != -1) & (gt_classes != bg_label)
+
         fg_idxs = fg_selection_mask.nonzero().squeeze(1)
+
         fg_proposals.append(proposals_per_image[fg_idxs])
+
         fg_selection_masks.append(fg_selection_mask)
+
     return fg_proposals, fg_selection_masks
 
 
@@ -94,30 +104,46 @@ def select_proposals_with_visible_keypoints(proposals: List[Instances]) -> List[
     This strategy seems to make no difference on Detectron and is easier to implement.
     """
     ret = []
+
     all_num_fg = []
+
     for proposals_per_image in proposals:
+
         # If empty/unannotated image (hard negatives), skip filtering for train
         if len(proposals_per_image) == 0:
+
             ret.append(proposals_per_image)
+
             continue
+
         gt_keypoints = proposals_per_image.gt_keypoints.tensor
+
         # #fg x K x 3
         vis_mask = gt_keypoints[:, :, 2] >= 1
+
         xs, ys = gt_keypoints[:, :, 0], gt_keypoints[:, :, 1]
+
         proposal_boxes = proposals_per_image.proposal_boxes.tensor.unsqueeze(dim=1)  # #fg x 1 x 4
+
         kp_in_box = (
             (xs >= proposal_boxes[:, :, 0])
             & (xs <= proposal_boxes[:, :, 2])
             & (ys >= proposal_boxes[:, :, 1])
             & (ys <= proposal_boxes[:, :, 3])
         )
+
         selection = (kp_in_box & vis_mask).any(dim=1)
+
         selection_idxs = nonzero_tuple(selection)[0]
+
         all_num_fg.append(selection_idxs.numel())
+
         ret.append(proposals_per_image[selection_idxs])
 
     storage = get_event_storage()
+
     storage.put_scalar("keypoint_head/num_fg_samples", np.mean(all_num_fg))
+
     return ret
 
 
@@ -158,14 +184,20 @@ class ROIHeads(torch.nn.Module):
             proposal_append_gt (bool): whether to include ground truth as proposals as well
         """
         super().__init__()
+
         self.batch_size_per_image = batch_size_per_image
+
         self.positive_fraction = positive_fraction
+
         self.num_classes = num_classes
+
         self.proposal_matcher = proposal_matcher
+
         self.proposal_append_gt = proposal_append_gt
 
     @classmethod
     def from_config(cls, cfg):
+
         return {
             "batch_size_per_image": cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE,
             "positive_fraction": cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION,
@@ -200,6 +232,7 @@ class ROIHeads(torch.nn.Module):
                 [0, num_classes) or the background (num_classes).
         """
         has_gt = gt_classes.numel() > 0
+
         # Get the corresponding GT for each proposal
         if has_gt:
             gt_classes = gt_classes[matched_idxs]
@@ -215,6 +248,7 @@ class ROIHeads(torch.nn.Module):
         )
 
         sampled_idxs = torch.cat([sampled_fg_idxs, sampled_bg_idxs], dim=0)
+
         return sampled_idxs, gt_classes[sampled_idxs]
 
     @torch.no_grad()
@@ -256,27 +290,35 @@ class ROIHeads(torch.nn.Module):
         # convergence and empirically improves box AP on COCO by about 0.5
         # points (under one tested configuration).
         if self.proposal_append_gt:
+
             proposals = add_ground_truth_to_proposals(targets, proposals)
 
         proposals_with_gt = []
 
         num_fg_samples = []
         num_bg_samples = []
+
         for proposals_per_image, targets_per_image in zip(proposals, targets):
+
             has_gt = len(targets_per_image) > 0
+
             match_quality_matrix = pairwise_iou(
                 targets_per_image.gt_boxes, proposals_per_image.proposal_boxes
             )
+
             matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
+
             sampled_idxs, gt_classes = self._sample_proposals(
                 matched_idxs, matched_labels, targets_per_image.gt_classes
             )
 
             # Set target attributes of the sampled proposals:
             proposals_per_image = proposals_per_image[sampled_idxs]
+
             proposals_per_image.gt_classes = gt_classes
 
             if has_gt:
+
                 sampled_targets = matched_idxs[sampled_idxs]
                 # We index all the attributes of targets that start with "gt_"
                 # and have not been added to proposals yet (="gt_classes").
@@ -285,18 +327,23 @@ class ROIHeads(torch.nn.Module):
                 # (by foreground/background, or number of keypoints in the image, etc)
                 # so we essentially index the data twice.
                 for trg_name, trg_value in targets_per_image.get_fields().items():
+
                     if trg_name.startswith("gt_") and not proposals_per_image.has(trg_name):
+
                         proposals_per_image.set(trg_name, trg_value[sampled_targets])
+
             # If no GT is given in the image, we don't know what a dummy gt value can be.
             # Therefore the returned proposals won't have any gt_* fields, except for a
             # gt_classes full of background label.
 
             num_bg_samples.append((gt_classes == self.num_classes).sum().item())
             num_fg_samples.append(gt_classes.numel() - num_bg_samples[-1])
+
             proposals_with_gt.append(proposals_per_image)
 
         # Log the number of fg/bg samples that are selected for training ROI heads
         storage = get_event_storage()
+
         storage.put_scalar("roi_head/num_fg_samples", np.mean(num_fg_samples))
         storage.put_scalar("roi_head/num_bg_samples", np.mean(num_bg_samples))
 
@@ -374,26 +421,39 @@ class Res5ROIHeads(ROIHeads):
             mask_head (nn.Module): transform features to make mask predictions
         """
         super().__init__(**kwargs)
+
         self.in_features = in_features
+
         self.pooler = pooler
+
         if isinstance(res5, (list, tuple)):
+
             res5 = nn.Sequential(*res5)
+
         self.res5 = res5
+
         self.box_predictor = box_predictor
+
         self.mask_on = mask_head is not None
+
         if self.mask_on:
+
             self.mask_head = mask_head
 
     @classmethod
     def from_config(cls, cfg, input_shape):
+
         # fmt: off
         ret = super().from_config(cfg)
+
         in_features = ret["in_features"] = cfg.MODEL.ROI_HEADS.IN_FEATURES
+
         pooler_resolution = cfg.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION
         pooler_type       = cfg.MODEL.ROI_BOX_HEAD.POOLER_TYPE
         pooler_scales     = (1.0 / input_shape[in_features[0]].stride, )
         sampling_ratio    = cfg.MODEL.ROI_BOX_HEAD.POOLER_SAMPLING_RATIO
         mask_on           = cfg.MODEL.MASK_ON
+
         # fmt: on
         assert not cfg.MODEL.KEYPOINT_ON
         assert len(in_features) == 1
@@ -408,6 +468,7 @@ class Res5ROIHeads(ROIHeads):
         # Compatbility with old moco code. Might be useful.
         # See notes in StandardROIHeads.from_config
         if not inspect.ismethod(cls._build_res5_block):
+
             logger.warning(
                 "The behavior of _build_res5_block may change. "
                 "Please do not depend on private methods."
@@ -415,19 +476,23 @@ class Res5ROIHeads(ROIHeads):
             cls._build_res5_block = classmethod(cls._build_res5_block)
 
         ret["res5"], out_channels = cls._build_res5_block(cfg)
+
         ret["box_predictor"] = FastRCNNOutputLayers(
             cfg, ShapeSpec(channels=out_channels, height=1, width=1)
         )
 
         if mask_on:
+
             ret["mask_head"] = build_mask_head(
                 cfg,
                 ShapeSpec(channels=out_channels, width=pooler_resolution, height=pooler_resolution),
             )
+
         return ret
 
     @classmethod
     def _build_res5_block(cls, cfg):
+
         # fmt: off
         stage_channel_factor = 2 ** 3  # res5 is 8x res2
         num_groups           = cfg.MODEL.RESNETS.NUM_GROUPS
@@ -436,8 +501,7 @@ class Res5ROIHeads(ROIHeads):
         out_channels         = cfg.MODEL.RESNETS.RES2_OUT_CHANNELS * stage_channel_factor
         stride_in_1x1        = cfg.MODEL.RESNETS.STRIDE_IN_1X1
         norm                 = cfg.MODEL.RESNETS.NORM
-        assert not cfg.MODEL.RESNETS.DEFORM_ON_PER_STAGE[-1], \
-            "Deformable conv is not yet supported in res5 head."
+        assert not cfg.MODEL.RESNETS.DEFORM_ON_PER_STAGE[-1], "Deformable conv is not yet supported in res5 head."
         # fmt: on
 
         blocks = ResNet.make_stage(
@@ -451,10 +515,13 @@ class Res5ROIHeads(ROIHeads):
             norm=norm,
             stride_in_1x1=stride_in_1x1,
         )
+
         return nn.Sequential(*blocks), out_channels
 
     def _shared_roi_transform(self, features: List[torch.Tensor], boxes: List[Boxes]):
+
         x = self.pooler(features, boxes)
+
         return self.res5(x)
 
     def forward(
@@ -470,20 +537,29 @@ class Res5ROIHeads(ROIHeads):
         del images
 
         if self.training:
+
             assert targets
+
             proposals = self.label_and_sample_proposals(proposals, targets)
+
         del targets
 
         proposal_boxes = [x.proposal_boxes for x in proposals]
+
         box_features = self._shared_roi_transform(
             [features[f] for f in self.in_features], proposal_boxes
         )
+
         predictions = self.box_predictor(box_features.mean(dim=[2, 3]))
 
         if self.training:
+
             del features
+
             losses = self.box_predictor.losses(predictions, proposals)
+
             if self.mask_on:
+
                 proposals, fg_selection_masks = select_foreground_proposals(
                     proposals, self.num_classes
                 )
@@ -492,12 +568,18 @@ class Res5ROIHeads(ROIHeads):
                 # on foreground proposals, so we need to select out the foreground
                 # features.
                 mask_features = box_features[torch.cat(fg_selection_masks, dim=0)]
+
                 del box_features
+
                 losses.update(self.mask_head(mask_features, proposals))
+
             return [], losses
+
         else:
+
             pred_instances, _ = self.box_predictor.inference(predictions, proposals)
             pred_instances = self.forward_with_given_boxes(features, pred_instances)
+
             return pred_instances, {}
 
     def forward_with_given_boxes(
@@ -520,10 +602,15 @@ class Res5ROIHeads(ROIHeads):
         assert instances[0].has("pred_boxes") and instances[0].has("pred_classes")
 
         if self.mask_on:
+
             feature_list = [features[f] for f in self.in_features]
+
             x = self._shared_roi_transform(feature_list, [x.pred_boxes for x in instances])
+
             return self.mask_head(x, instances)
+
         else:
+            
             return instances
 
 

@@ -1,7 +1,10 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import logging
+
 from typing import Callable, Dict, List, Optional, Tuple, Union
+
 import torch
+
 from torch import nn
 from torch.nn import functional as F
 
@@ -82,6 +85,7 @@ def fast_rcnn_inference(
         )
         for scores_per_image, boxes_per_image, image_shape in zip(scores, boxes, image_shapes)
     ]
+
     return [x[0] for x in result_per_image], [x[1] for x in result_per_image]
 
 
@@ -94,23 +98,35 @@ def _log_classification_stats(pred_logits, gt_classes, prefix="fast_rcnn"):
         gt_classes: R labels
     """
     num_instances = gt_classes.numel()
+
     if num_instances == 0:
+
         return
+
     pred_classes = pred_logits.argmax(dim=1)
+
     bg_class_ind = pred_logits.shape[1] - 1
 
     fg_inds = (gt_classes >= 0) & (gt_classes < bg_class_ind)
+
     num_fg = fg_inds.nonzero().numel()
+
     fg_gt_classes = gt_classes[fg_inds]
+
     fg_pred_classes = pred_classes[fg_inds]
 
     num_false_negative = (fg_pred_classes == bg_class_ind).nonzero().numel()
+
     num_accurate = (pred_classes == gt_classes).nonzero().numel()
+
     fg_num_accurate = (fg_pred_classes == fg_gt_classes).nonzero().numel()
 
     storage = get_event_storage()
+
     storage.put_scalar(f"{prefix}/cls_accuracy", num_accurate / num_instances)
+
     if num_fg > 0:
+        #
         storage.put_scalar(f"{prefix}/fg_cls_accuracy", fg_num_accurate / num_fg)
         storage.put_scalar(f"{prefix}/false_negative", num_false_negative / num_fg)
 
@@ -135,39 +151,53 @@ def fast_rcnn_inference_single_image(
         Same as `fast_rcnn_inference`, but for only one image.
     """
     valid_mask = torch.isfinite(boxes).all(dim=1) & torch.isfinite(scores).all(dim=1)
+
     if not valid_mask.all():
+
         boxes = boxes[valid_mask]
+
         scores = scores[valid_mask]
 
     scores = scores[:, :-1]
+
     num_bbox_reg_classes = boxes.shape[1] // 4
+
     # Convert to Boxes to use the `clip` function ...
     boxes = Boxes(boxes.reshape(-1, 4))
+
     boxes.clip(image_shape)
+
     boxes = boxes.tensor.view(-1, num_bbox_reg_classes, 4)  # R x C x 4
 
     # 1. Filter results based on detection scores. It can make NMS more efficient
     #    by filtering out low-confidence detections.
     filter_mask = scores > score_thresh  # R x K
+
     # R' x 2. First column contains indices of the R predictions;
     # Second column contains indices of classes.
     filter_inds = filter_mask.nonzero()
+
     if num_bbox_reg_classes == 1:
         boxes = boxes[filter_inds[:, 0], 0]
     else:
         boxes = boxes[filter_mask]
+
     scores = scores[filter_mask]
 
     # 2. Apply NMS for each class independently.
     keep = batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
+
     if topk_per_image >= 0:
+
         keep = keep[:topk_per_image]
+
     boxes, scores, filter_inds = boxes[keep], scores[keep], filter_inds[keep]
 
     result = Instances(image_shape)
     result.pred_boxes = Boxes(boxes)
     result.scores = scores
     result.pred_classes = filter_inds[:, 1]
+
     return result, filter_inds[:, 0]
 
 
@@ -228,19 +258,29 @@ class FastRCNNOutputLayers(nn.Module):
             fed_loss_num_classes (int): number of federated classes to keep in total
         """
         super().__init__()
+
         if isinstance(input_shape, int):  # some backward compatibility
+
             input_shape = ShapeSpec(channels=input_shape)
+
         self.num_classes = num_classes
+
         input_size = input_shape.channels * (input_shape.width or 1) * (input_shape.height or 1)
         # prediction layer for num_classes foreground classes and one background class (hence + 1)
+
         self.cls_score = nn.Linear(input_size, num_classes + 1)
+
         num_bbox_reg_classes = 1 if cls_agnostic_bbox_reg else num_classes
+
         box_dim = len(box2box_transform.weights)
+
         self.bbox_pred = nn.Linear(input_size, num_bbox_reg_classes * box_dim)
 
         nn.init.normal_(self.cls_score.weight, std=0.01)
         nn.init.normal_(self.bbox_pred.weight, std=0.001)
+
         for l in [self.cls_score, self.bbox_pred]:
+
             nn.init.constant_(l.bias, 0)
 
         self.box2box_transform = box2box_transform
@@ -249,23 +289,31 @@ class FastRCNNOutputLayers(nn.Module):
         self.test_nms_thresh = test_nms_thresh
         self.test_topk_per_image = test_topk_per_image
         self.box_reg_loss_type = box_reg_loss_type
+
         if isinstance(loss_weight, float):
+
             loss_weight = {"loss_cls": loss_weight, "loss_box_reg": loss_weight}
+
         self.loss_weight = loss_weight
         self.use_fed_loss = use_fed_loss
         self.use_sigmoid_ce = use_sigmoid_ce
         self.fed_loss_num_classes = fed_loss_num_classes
 
         if self.use_fed_loss:
+
             assert self.use_sigmoid_ce, "Please use sigmoid cross entropy loss with federated loss"
+
             fed_loss_cls_weights = get_fed_loss_cls_weights()
+
             assert (
                 len(fed_loss_cls_weights) == self.num_classes
             ), "Please check the provided fed_loss_cls_weights. Their size should match num_classes"
+
             self.register_buffer("fed_loss_cls_weights", fed_loss_cls_weights)
 
     @classmethod
     def from_config(cls, cfg, input_shape):
+
         return {
             "input_shape": input_shape,
             "box2box_transform": Box2BoxTransform(weights=cfg.MODEL.ROI_BOX_HEAD.BBOX_REG_WEIGHTS),
@@ -299,9 +347,13 @@ class FastRCNNOutputLayers(nn.Module):
             or (N,4) for class-agnostic regression.
         """
         if x.dim() > 2:
+
             x = torch.flatten(x, start_dim=1)
+
         scores = self.cls_score(x)
+
         proposal_deltas = self.bbox_pred(x)
+
         return scores, proposal_deltas
 
     def losses(self, predictions, proposals):
@@ -321,21 +373,26 @@ class FastRCNNOutputLayers(nn.Module):
         gt_classes = (
             cat([p.gt_classes for p in proposals], dim=0) if len(proposals) else torch.empty(0)
         )
+
         _log_classification_stats(scores, gt_classes)
 
         # parse box regression outputs
         if len(proposals):
+
             proposal_boxes = cat([p.proposal_boxes.tensor for p in proposals], dim=0)  # Nx4
+
             assert not proposal_boxes.requires_grad, "Proposals should not require gradients!"
             # If "gt_boxes" does not exist, the proposals must be all negative and
             # should not be included in regression loss computation.
             # Here we just use proposal_boxes as an arbitrary placeholder because its
             # value won't be used in self.box_reg_loss().
+
             gt_boxes = cat(
-                [(p.gt_boxes if p.has("gt_boxes") else p.proposal_boxes).tensor for p in proposals],
-                dim=0,
+                [(p.gt_boxes if p.has("gt_boxes") else p.proposal_boxes).tensor for p in proposals], dim=0,
             )
+
         else:
+
             proposal_boxes = gt_boxes = torch.empty((0, 4), device=proposal_deltas.device)
 
         if self.use_sigmoid_ce:
@@ -349,6 +406,7 @@ class FastRCNNOutputLayers(nn.Module):
                 proposal_boxes, gt_boxes, proposal_deltas, gt_classes
             ),
         }
+
         return {k: v * self.loss_weight.get(k, 1.0) for k, v in losses.items()}
 
     # Implementation from https://github.com/xingyizhou/CenterNet2/blob/master/projects/CenterNet2/centernet/modeling/roi_heads/fed_loss.py  # noqa
@@ -368,17 +426,27 @@ class FastRCNNOutputLayers(nn.Module):
                 classes and sampled negative classes.
         """
         unique_gt_classes = torch.unique(gt_classes)
+
         prob = unique_gt_classes.new_ones(num_classes + 1).float()
+
         prob[-1] = 0
+
         if len(unique_gt_classes) < num_fed_loss_classes:
+
             prob[:num_classes] = weight.float().clone()
+
             prob[unique_gt_classes] = 0
+
             sampled_negative_classes = torch.multinomial(
                 prob, num_fed_loss_classes - len(unique_gt_classes), replacement=False
             )
+
             fed_loss_classes = torch.cat([unique_gt_classes, sampled_negative_classes])
+
         else:
+
             fed_loss_classes = unique_gt_classes
+
         return fed_loss_classes
 
     # Implementation from https://github.com/xingyizhou/CenterNet2/blob/master/projects/CenterNet2/centernet/modeling/roi_heads/custom_fast_rcnn.py#L113  # noqa
@@ -391,6 +459,7 @@ class FastRCNNOutputLayers(nn.Module):
             gt_classes: a long tensor of shape R that contains the gt class label of each proposal.
         """
         if pred_class_logits.numel() == 0:
+            #
             return pred_class_logits.new_zeros([1])[0]
 
         N = pred_class_logits.shape[0]
@@ -405,20 +474,26 @@ class FastRCNNOutputLayers(nn.Module):
         )
 
         if self.use_fed_loss:
+
             fed_loss_classes = self.get_fed_loss_classes(
                 gt_classes,
                 num_fed_loss_classes=self.fed_loss_num_classes,
                 num_classes=K,
                 weight=self.fed_loss_cls_weights,
             )
+
             fed_loss_classes_mask = fed_loss_classes.new_zeros(K + 1)
             fed_loss_classes_mask[fed_loss_classes] = 1
             fed_loss_classes_mask = fed_loss_classes_mask[:K]
+
             weight = fed_loss_classes_mask.view(1, K).expand(N, K).float()
+
         else:
+
             weight = 1
 
         loss = torch.sum(cls_loss * weight) / N
+
         return loss
 
     def box_reg_loss(self, proposal_boxes, gt_boxes, pred_deltas, gt_classes):
@@ -430,8 +505,10 @@ class FastRCNNOutputLayers(nn.Module):
             R shall be the number of proposals.
         """
         box_dim = proposal_boxes.shape[1]  # 4 or 5
+
         # Regression loss is only computed for foreground proposals (those matched to a GT)
         fg_inds = nonzero_tuple((gt_classes >= 0) & (gt_classes < self.num_classes))[0]
+
         if pred_deltas.shape[1] == box_dim:  # cls-agnostic regression
             fg_pred_deltas = pred_deltas[fg_inds]
         else:
@@ -474,8 +551,11 @@ class FastRCNNOutputLayers(nn.Module):
             list[Tensor]: same as `fast_rcnn_inference`.
         """
         boxes = self.predict_boxes(predictions, proposals)
+
         scores = self.predict_probs(predictions, proposals)
+
         image_shapes = [x.image_size for x in proposals]
+
         return fast_rcnn_inference(
             boxes,
             scores,
@@ -499,25 +579,34 @@ class FastRCNNOutputLayers(nn.Module):
                 the number of proposals for image i and B is the box dimension (4 or 5)
         """
         if not len(proposals):
+
             return []
+
         scores, proposal_deltas = predictions
+
         proposal_boxes = cat([p.proposal_boxes.tensor for p in proposals], dim=0)
+
         N, B = proposal_boxes.shape
+
         predict_boxes = self.box2box_transform.apply_deltas(
             proposal_deltas, proposal_boxes
         )  # Nx(KxB)
 
         K = predict_boxes.shape[1] // B
+
         if K > 1:
+
             gt_classes = torch.cat([p.gt_classes for p in proposals], dim=0)
-            # Some proposals are ignored or have a background class. Their gt_classes
-            # cannot be used as index.
+
+            # Some proposals are ignored or have a background class. Their gt_classes cannot be used as index.
             gt_classes = gt_classes.clamp_(0, K - 1)
 
             predict_boxes = predict_boxes.view(N, K, B)[
                 torch.arange(N, dtype=torch.long, device=predict_boxes.device), gt_classes
             ]
+
         num_prop_per_image = [len(p) for p in proposals]
+
         return predict_boxes.split(num_prop_per_image)
 
     def predict_boxes(
@@ -536,14 +625,20 @@ class FastRCNNOutputLayers(nn.Module):
                 the number of proposals for image i and B is the box dimension (4 or 5)
         """
         if not len(proposals):
+
             return []
+
         _, proposal_deltas = predictions
+
         num_prop_per_image = [len(p) for p in proposals]
+
         proposal_boxes = cat([p.proposal_boxes.tensor for p in proposals], dim=0)
+
         predict_boxes = self.box2box_transform.apply_deltas(
             proposal_deltas,
             proposal_boxes,
         )  # Nx(KxB)
+
         return predict_boxes.split(num_prop_per_image)
 
     def predict_probs(
@@ -561,9 +656,12 @@ class FastRCNNOutputLayers(nn.Module):
                 Element i has shape (Ri, K + 1), where Ri is the number of proposals for image i.
         """
         scores, _ = predictions
+
         num_inst_per_image = [len(p) for p in proposals]
+
         if self.use_sigmoid_ce:
             probs = scores.sigmoid()
         else:
             probs = F.softmax(scores, dim=-1)
+            
         return probs.split(num_inst_per_image, dim=0)
