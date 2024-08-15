@@ -26,7 +26,7 @@ __all__ = ["GeneralizedRCNN", "ProposalNetwork"]
 
 
 @META_ARCH_REGISTRY.register()
-class GeneralizedRCNN(nn.Module):
+class GeneralizedRCNN(nn.Module):  # 广义R-CNN：
     """
     Generalized R-CNN. Any models that contains the following three components:
     1. Per-image feature extraction (aka backbone)
@@ -38,21 +38,19 @@ class GeneralizedRCNN(nn.Module):
     def __init__(
         self,
         *,
-        backbone: Backbone,
-        proposal_generator: nn.Module,
-        roi_heads: nn.Module,
-        pixel_mean: Tuple[float],
-        pixel_std: Tuple[float],
-        input_format: Optional[str] = None,
-        vis_period: int = 0,
+        backbone: Backbone, # 主干网络
+        proposal_generator: nn.Module, # 基于主干网络特征生成提案的模块
+        roi_heads: nn.Module, # ROI头（执行每个REGION计算）
+        pixel_mean: Tuple[float], pixel_std: Tuple[float], #
+        input_format: Optional[str] = None, # 输入通道的含意（用于可视化）
+        vis_period: int = 0, # 可视化周期
     ):
         """
         Args:
             backbone: a backbone module, must follow detectron2's backbone interface
             proposal_generator: a module that generates proposals using backbone features
             roi_heads: a ROI head that performs per-region computation
-            pixel_mean, pixel_std: list or tuple with #channels element, representing
-                the per-channel mean and std to be used to normalize the input image
+            pixel_mean, pixel_std: list or tuple with #channels element, representing the per-channel mean and std to be used to normalize the input image
             input_format: describe the meaning of channels of input. Needed by visualization
             vis_period: the period to run visualization. Set to 0 to disable.
         """
@@ -217,7 +215,7 @@ class GeneralizedRCNN(nn.Module):
     def inference(
         self,
         batched_inputs: List[Dict[str, torch.Tensor]],
-        detected_instances: Optional[List[Instances]] = None,
+        detected_instances: Optional[List[Instances]] = None,  # 模型将会保留该BBOX并计算其他输出
         do_postprocess: bool = True,
     ):
         """

@@ -126,12 +126,13 @@ class Resize(Augmentation):
         self._init(locals())
 
     def get_transform(self, image):
+        #
         return ResizeTransform(
             image.shape[0], image.shape[1], self.shape[0], self.shape[1], self.interp
         )
 
 
-class ResizeShortestEdge(Augmentation):
+class ResizeShortestEdge(Augmentation): # 在保持宽高比不变的情况下调整图像大小
     """
     Resize the image while keeping the aspect ratio unchanged.
     It attempts to scale the shorter edge to the given `short_edge_length`,
@@ -152,29 +153,40 @@ class ResizeShortestEdge(Augmentation):
             sample_style (str): either "range" or "choice".
         """
         super().__init__()
+
         assert sample_style in ["range", "choice"], sample_style
 
         self.is_range = sample_style == "range"
+
         if isinstance(short_edge_length, int):
+            #
             short_edge_length = (short_edge_length, short_edge_length)
+
         if self.is_range:
+
             assert len(short_edge_length) == 2, (
                 "short_edge_length must be two values using 'range' sample style."
                 f" Got {short_edge_length}!"
             )
+
         self._init(locals())
 
     @torch.jit.unused
     def get_transform(self, image):
+
         h, w = image.shape[:2]
+
         if self.is_range:
             size = np.random.randint(self.short_edge_length[0], self.short_edge_length[1] + 1)
         else:
             size = np.random.choice(self.short_edge_length)
+
         if size == 0:
+            #
             return NoOpTransform()
 
         newh, neww = ResizeShortestEdge.get_output_shape(h, w, size, self.max_size)
+
         return ResizeTransform(h, w, newh, neww, self.interp)
 
     @staticmethod
@@ -185,18 +197,26 @@ class ResizeShortestEdge(Augmentation):
         Compute the output size given input size and target short edge length.
         """
         h, w = oldh, oldw
+
         size = short_edge_length * 1.0
+
         scale = size / min(h, w)
+
         if h < w:
             newh, neww = size, scale * w
         else:
             newh, neww = scale * h, size
+
         if max(newh, neww) > max_size:
+
             scale = max_size * 1.0 / max(newh, neww)
+
             newh = newh * scale
             neww = neww * scale
+
         neww = int(neww + 0.5)
         newh = int(newh + 0.5)
+
         return (newh, neww)
 
 
@@ -229,6 +249,7 @@ class ResizeScale(Augmentation):
         self._init(locals())
 
     def _get_resize(self, image: np.ndarray, scale: float) -> Transform:
+        #
         input_size = image.shape[:2]
 
         # Compute new target size given a scale.
@@ -239,6 +260,7 @@ class ResizeScale(Augmentation):
         output_scale = np.minimum(
             target_scale_size[0] / input_size[0], target_scale_size[1] / input_size[1]
         )
+
         output_size = np.round(np.multiply(input_size, output_scale)).astype(int)
 
         return ResizeTransform(
@@ -246,7 +268,9 @@ class ResizeScale(Augmentation):
         )
 
     def get_transform(self, image: np.ndarray) -> Transform:
+
         random_scale = np.random.uniform(self.min_scale, self.max_scale)
+
         return self._get_resize(image, random_scale)
 
 
@@ -272,33 +296,52 @@ class RandomRotation(Augmentation):
                 center has no effect if expand=True because it only affects shifting
         """
         super().__init__()
+
         assert sample_style in ["range", "choice"], sample_style
+
         self.is_range = sample_style == "range"
+
         if isinstance(angle, (float, int)):
+            #
             angle = (angle, angle)
+
         if center is not None and isinstance(center[0], (float, int)):
+            #
             center = (center, center)
+
         self._init(locals())
 
     def get_transform(self, image):
+
         h, w = image.shape[:2]
+
         center = None
+
         if self.is_range:
+
             angle = np.random.uniform(self.angle[0], self.angle[1])
+
             if self.center is not None:
+
                 center = (
                     np.random.uniform(self.center[0][0], self.center[1][0]),
                     np.random.uniform(self.center[0][1], self.center[1][1]),
                 )
+
         else:
+
             angle = np.random.choice(self.angle)
+
             if self.center is not None:
+                #
                 center = np.random.choice(self.center)
 
         if center is not None:
+            #
             center = (w * center[0], h * center[1])  # Convert to absolute coordinates
 
         if angle % 360 == 0:
+            #
             return NoOpTransform()
 
         return RotationTransform(h, w, angle, expand=self.expand, center=center, interp=self.interp)
@@ -327,9 +370,11 @@ class FixedSizeCrop(Augmentation):
             seg_pad_value: the padding value to the segmentation mask.
         """
         super().__init__()
+
         self._init(locals())
 
     def _get_crop(self, image: np.ndarray) -> Transform:
+
         # Compute the image scale and scaled size.
         input_size = image.shape[:2]
         output_size = self.crop_size
@@ -337,13 +382,16 @@ class FixedSizeCrop(Augmentation):
         # Add random crop if the image is scaled up.
         max_offset = np.subtract(input_size, output_size)
         max_offset = np.maximum(max_offset, 0)
+
         offset = np.multiply(max_offset, np.random.uniform(0.0, 1.0))
         offset = np.round(offset).astype(int)
+
         return CropTransform(
             offset[1], offset[0], output_size[1], output_size[0], input_size[1], input_size[0]
         )
 
     def _get_pad(self, image: np.ndarray) -> Transform:
+
         # Compute the image scale and scaled size.
         input_size = image.shape[:2]
         output_size = self.crop_size
@@ -351,7 +399,9 @@ class FixedSizeCrop(Augmentation):
         # Add padding if the image is scaled down.
         pad_size = np.subtract(output_size, input_size)
         pad_size = np.maximum(pad_size, 0)
+
         original_size = np.minimum(input_size, output_size)
+
         return PadTransform(
             0,
             0,
@@ -364,9 +414,13 @@ class FixedSizeCrop(Augmentation):
         )
 
     def get_transform(self, image: np.ndarray) -> TransformList:
+
         transforms = [self._get_crop(image)]
+
         if self.pad:
+
             transforms.append(self._get_pad(image))
+
         return TransformList(transforms)
 
 
@@ -398,11 +452,16 @@ class RandomCrop(Augmentation):
         self._init(locals())
 
     def get_transform(self, image):
+
         h, w = image.shape[:2]
+
         croph, cropw = self.get_crop_size((h, w))
+
         assert h >= croph and w >= cropw, "Shape computation in {} has bugs.".format(self)
+
         h0 = np.random.randint(h - croph + 1)
         w0 = np.random.randint(w - cropw + 1)
+
         return CropTransform(w0, h0, cropw, croph)
 
     def get_crop_size(self, image_size):
@@ -414,21 +473,36 @@ class RandomCrop(Augmentation):
             crop_size (tuple): height, width in absolute pixels
         """
         h, w = image_size
+
         if self.crop_type == "relative":
+
             ch, cw = self.crop_size
+
             return int(h * ch + 0.5), int(w * cw + 0.5)
+
         elif self.crop_type == "relative_range":
+
             crop_size = np.asarray(self.crop_size, dtype=np.float32)
+
             ch, cw = crop_size + np.random.rand(2) * (1 - crop_size)
+
             return int(h * ch + 0.5), int(w * cw + 0.5)
+
         elif self.crop_type == "absolute":
+
             return (min(self.crop_size[0], h), min(self.crop_size[1], w))
+
         elif self.crop_type == "absolute_range":
+
             assert self.crop_size[0] <= self.crop_size[1]
+
             ch = np.random.randint(min(h, self.crop_size[0]), min(h, self.crop_size[1]) + 1)
             cw = np.random.randint(min(w, self.crop_size[0]), min(w, self.crop_size[1]) + 1)
+
             return ch, cw
+
         else:
+
             raise NotImplementedError("Unknown crop type {}".format(self.crop_type))
 
 
@@ -457,24 +531,40 @@ class RandomCrop_CategoryAreaConstraint(Augmentation):
                 that's ignored in training.
         """
         self.crop_aug = RandomCrop(crop_type, crop_size)
+
         self._init(locals())
 
     def get_transform(self, image, sem_seg):
+
         if self.single_category_max_area >= 1.0:
+
             return self.crop_aug.get_transform(image)
+
         else:
+
             h, w = sem_seg.shape
+
             for _ in range(10):
+
                 crop_size = self.crop_aug.get_crop_size((h, w))
+
                 y0 = np.random.randint(h - crop_size[0] + 1)
                 x0 = np.random.randint(w - crop_size[1] + 1)
+
                 sem_seg_temp = sem_seg[y0 : y0 + crop_size[0], x0 : x0 + crop_size[1]]
+
                 labels, cnt = np.unique(sem_seg_temp, return_counts=True)
+
                 if self.ignored_category is not None:
+
                     cnt = cnt[labels != self.ignored_category]
+
                 if len(cnt) > 1 and np.max(cnt) < np.sum(cnt) * self.single_category_max_area:
+
                     break
+
             crop_tfm = CropTransform(x0, y0, crop_size[1], crop_size[0])
+
             return crop_tfm
 
 
@@ -498,9 +588,11 @@ class RandomExtent(Augmentation):
                 component to zero to crop at the image's center.
         """
         super().__init__()
+
         self._init(locals())
 
     def get_transform(self, image):
+        #
         img_h, img_w = image.shape[:2]
 
         # Initialize src_rect to fit the input image.
@@ -542,10 +634,13 @@ class RandomContrast(Augmentation):
             intensity_max (float): Maximum augmentation
         """
         super().__init__()
+
         self._init(locals())
 
     def get_transform(self, image):
+
         w = np.random.uniform(self.intensity_min, self.intensity_max)
+
         return BlendTransform(src_image=image.mean(), src_weight=1 - w, dst_weight=w)
 
 
@@ -571,7 +666,9 @@ class RandomBrightness(Augmentation):
         self._init(locals())
 
     def get_transform(self, image):
+
         w = np.random.uniform(self.intensity_min, self.intensity_max)
+
         return BlendTransform(src_image=0, src_weight=1 - w, dst_weight=w)
 
 
@@ -595,12 +692,17 @@ class RandomSaturation(Augmentation):
             intensity_max (float): Maximum augmentation (1 preserves input).
         """
         super().__init__()
+
         self._init(locals())
 
     def get_transform(self, image):
+
         assert image.shape[-1] == 3, "RandomSaturation only works on RGB images"
+
         w = np.random.uniform(self.intensity_min, self.intensity_max)
+
         grayscale = image.dot([0.299, 0.587, 0.114])[:, :, np.newaxis]
+
         return BlendTransform(src_image=grayscale, src_weight=1 - w, dst_weight=w)
 
 
@@ -619,22 +721,30 @@ class RandomLighting(Augmentation):
             scale (float): Standard deviation of principal component weighting.
         """
         super().__init__()
+
         self._init(locals())
+
         self.eigen_vecs = np.array(
             [[-0.5675, 0.7192, 0.4009], [-0.5808, -0.0045, -0.8140], [-0.5836, -0.6948, 0.4203]]
         )
+
         self.eigen_vals = np.array([0.2175, 0.0188, 0.0045])
 
     def get_transform(self, image):
+
         assert image.shape[-1] == 3, "RandomLighting only works on RGB images"
+
         weights = np.random.normal(scale=self.scale, size=3)
+
         return BlendTransform(
             src_image=self.eigen_vecs.dot(weights * self.eigen_vals), src_weight=1.0, dst_weight=1.0
         )
 
 
 class RandomResize(Augmentation):
-    """Randomly resize image to a target size in shape_list"""
+    """
+    Randomly resize image to a target size in shape_list
+    """
 
     def __init__(self, shape_list, interp=Image.BILINEAR):
         """
@@ -643,16 +753,21 @@ class RandomResize(Augmentation):
             interp: PIL interpolation method
         """
         self.shape_list = shape_list
+
         self._init(locals())
 
     def get_transform(self, image):
+
         shape_idx = np.random.randint(low=0, high=len(self.shape_list))
+
         h, w = self.shape_list[shape_idx]
+
         return ResizeTransform(image.shape[0], image.shape[1], h, w, self.interp)
 
 
 class MinIoURandomCrop(Augmentation):
-    """Random crop the image & bboxes, the cropped patches have minimum IoU
+    """
+    Random crop the image & bboxes, the cropped patches have minimum IoU
     requirement with original image & bboxes, the IoU threshold is randomly
     selected from min_ious.
 
@@ -672,65 +787,94 @@ class MinIoURandomCrop(Augmentation):
         mode_trials=1000,
         crop_trials=50,
     ):
+
         self.min_ious = min_ious
+
         self.sample_mode = (1, *min_ious, 0)
+
         self.min_crop_size = min_crop_size
+
         self.mode_trials = mode_trials
         self.crop_trials = crop_trials
 
     def get_transform(self, image, boxes):
-        """Call function to crop images and bounding boxes with minimum IoU
+        """
+        Call function to crop images and bounding boxes with minimum IoU
         constraint.
 
         Args:
             boxes: ground truth boxes in (x1, y1, x2, y2) format
         """
         if boxes is None:
+
             return NoOpTransform()
+
         h, w, c = image.shape
+
         for _ in range(self.mode_trials):
+
             mode = random.choice(self.sample_mode)
+
             self.mode = mode
+
             if mode == 1:
+
                 return NoOpTransform()
 
             min_iou = mode
+
             for _ in range(self.crop_trials):
+
                 new_w = random.uniform(self.min_crop_size * w, w)
                 new_h = random.uniform(self.min_crop_size * h, h)
 
                 # h / w in [0.5, 2]
                 if new_h / new_w < 0.5 or new_h / new_w > 2:
+                    #
                     continue
 
                 left = random.uniform(w - new_w)
+
                 top = random.uniform(h - new_h)
 
                 patch = np.array((int(left), int(top), int(left + new_w), int(top + new_h)))
+
                 # Line or point crop is not allowed
                 if patch[2] == patch[0] or patch[3] == patch[1]:
+                    #
                     continue
+
                 overlaps = pairwise_iou(
                     Boxes(patch.reshape(-1, 4)), Boxes(boxes.reshape(-1, 4))
                 ).reshape(-1)
+
                 if len(overlaps) > 0 and overlaps.min() < min_iou:
+                    #
                     continue
 
                 # center of boxes should inside the crop img
                 # only adjust boxes and instance masks when the gt is not empty
                 if len(overlaps) > 0:
+                    #
                     # adjust boxes
+                    #
                     def is_center_of_bboxes_in_patch(boxes, patch):
+
                         center = (boxes[:, :2] + boxes[:, 2:]) / 2
+
                         mask = (
                             (center[:, 0] > patch[0])
                             * (center[:, 1] > patch[1])
                             * (center[:, 0] < patch[2])
                             * (center[:, 1] < patch[3])
                         )
+
                         return mask
 
                     mask = is_center_of_bboxes_in_patch(boxes, patch)
+
                     if not mask.any():
+
                         continue
+
                 return CropTransform(int(left), int(top), int(new_w), int(new_h))

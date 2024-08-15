@@ -328,13 +328,14 @@ class DefaultPredictor:
 
         if len(cfg.DATASETS.TEST):
 
-            self.metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0])
+            self.metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0]) # 数据集元数据
 
         checkpointer = DetectionCheckpointer(self.model)
         checkpointer.load(cfg.MODEL.WEIGHTS)
 
-        self.aug = T.ResizeShortestEdge(
-            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
+        self.aug = T.ResizeShortestEdge( # 在保持宽高比不变的情况下调整图像大小
+            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST],
+            cfg.INPUT.MAX_SIZE_TEST
         )
 
         self.input_format = cfg.INPUT.FORMAT
@@ -353,23 +354,26 @@ class DefaultPredictor:
         """
         with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
 
-            # Apply pre-processing to image.
-            if self.input_format == "RGB":
-                
-                # whether the model expects BGR inputs or RGB
-                original_image = original_image[:, :, ::-1]
+            # apply pre-processing to image.
+            if self.input_format == "RGB": # 原始图像为BGR格式
+
+                original_image = original_image[:, :, ::-1] # ::-1：表示翻转C通道数据 whether the model expects bgr inputs or rgb
 
             height, width = original_image.shape[:2]
 
             image = self.aug.get_transform(original_image).apply_image(original_image)
 
-            image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+            image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1)) # (C, H, W)
 
             image.to(self.cfg.MODEL.DEVICE)
 
-            inputs = {"image": image, "height": height, "width": width}
+            inputs = {
+                "image": image,
+                "height": height,
+                "width": width
+            }
 
-            predictions = self.model([inputs])[0]
+            predictions = self.model([inputs])[0]  # 执行推理
 
             return predictions
 
