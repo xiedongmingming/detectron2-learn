@@ -177,10 +177,15 @@ def get_norm(norm, out_channels):
         nn.Module or None: the normalization layer
     """
     if norm is None:
+        #
         return None
+
     if isinstance(norm, str):
+        #
         if len(norm) == 0:
+            #
             return None
+
         norm = {
             "BN": BatchNorm2d,
             # Fixed in https://github.com/pytorch/pytorch/pull/36382
@@ -194,6 +199,7 @@ def get_norm(norm, out_channels):
             "naiveSyncBN_N": lambda channels: NaiveSyncBatchNorm(channels, stats_mode="N"),
             "LN": lambda channels: LayerNorm(channels),
         }[norm]
+        
     return norm(out_channels)
 
 

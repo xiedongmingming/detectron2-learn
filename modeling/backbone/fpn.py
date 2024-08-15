@@ -27,9 +27,9 @@ class FPN(Backbone):
 
     def __init__(
         self,
-        bottom_up,
-        in_features,
-        out_channels,
+        bottom_up,  # 用于产生多尺度特征图的底层网络：VIT_Backbone
+        in_features, # 底层网络生成的特征图名称（顺序高到低）：['layer3', 'layer5', 'layer7', 'layer11']
+        out_channels, # 256
         norm="",
         top_block=None,
         fuse_type="sum",
@@ -64,12 +64,19 @@ class FPN(Backbone):
         assert isinstance(bottom_up, Backbone)
         assert in_features, in_features
 
-        # Feature map strides and channels from the bottom up network (e.g. ResNet)
+        # feature map strides and channels from the bottom up network (e.g. ResNet)
         input_shapes = bottom_up.output_shape()
 
-        strides = [input_shapes[f].stride for f in in_features]
+        # {
+        #       'layer3': ShapeSpec(channels=768, height=None, width=None, stride=4),
+        #       'layer5': ShapeSpec(channels=768, height=None, width=None, stride=8),
+        #       'layer7': ShapeSpec(channels=768, height=None, width=None, stride=16),
+        #       'layer11': ShapeSpec(channels=768, height=None, width=None, stride=32)
+        # }
 
-        in_channels_per_feature = [input_shapes[f].channels for f in in_features]
+        strides = [input_shapes[f].stride for f in in_features] # [4, 8, 16, 32]
+
+        in_channels_per_feature = [input_shapes[f].channels for f in in_features] # [768, 768, 768, 768]
 
         _assert_strides_are_log2_contiguous(strides)
 
@@ -81,7 +88,6 @@ class FPN(Backbone):
         for idx, in_channels in enumerate(in_channels_per_feature):
 
             lateral_norm = get_norm(norm, out_channels)
-
             output_norm = get_norm(norm, out_channels)
 
             lateral_conv = Conv2d(
