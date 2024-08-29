@@ -3,7 +3,9 @@ import copy
 import logging
 import os
 import torch
+
 from caffe2.proto import caffe2_pb2
+
 from torch import nn
 
 from detectron2.config import CfgNode
@@ -11,6 +13,7 @@ from detectron2.utils.file_io import PathManager
 
 from .caffe2_inference import ProtobufDetectionModel
 from .caffe2_modeling import META_ARCH_CAFFE2_EXPORT_TYPE_MAP, convert_batched_inputs_to_c2_format
+
 from .shared import get_pb_arg_vali, get_pb_arg_vals, save_graph
 
 __all__ = [
@@ -58,8 +61,11 @@ class Caffe2Tracer:
 
         # TODO make it support custom models, by passing in c2 model directly
         C2MetaArch = META_ARCH_CAFFE2_EXPORT_TYPE_MAP[cfg.MODEL.META_ARCHITECTURE]
+
         self.traceable_model = C2MetaArch(cfg, copy.deepcopy(model))
+
         self.inputs = inputs
+
         self.traceable_inputs = self.traceable_model.get_caffe2_inputs(inputs)
 
     def export_caffe2(self):
@@ -76,6 +82,7 @@ class Caffe2Tracer:
         predict_net, init_net = export_caffe2_detection_model(
             self.traceable_model, self.traceable_inputs
         )
+
         return Caffe2Model(predict_net, init_net)
 
     def export_onnx(self):
@@ -103,7 +110,9 @@ class Caffe2Tracer:
         """
         logger = logging.getLogger(__name__)
         logger.info("Tracing the model with torch.jit.trace ...")
+
         with torch.no_grad():
+            #
             return torch.jit.trace(self.traceable_model, (self.traceable_inputs,))
 
 
@@ -124,8 +133,11 @@ class Caffe2Model(nn.Module):
     """
 
     def __init__(self, predict_net, init_net):
+
         super().__init__()
+
         self.eval()  # always in eval mode
+
         self._predict_net = predict_net
         self._init_net = init_net
         self._predictor = None
@@ -162,7 +174,9 @@ class Caffe2Model(nn.Module):
         """
         logger = logging.getLogger(__name__)
         logger.info("Saving model to {} ...".format(output_dir))
+
         if not PathManager.exists(output_dir):
+            #
             PathManager.mkdirs(output_dir)
 
         with PathManager.open(os.path.join(output_dir, "model.pb"), "wb") as f:
@@ -186,12 +200,18 @@ class Caffe2Model(nn.Module):
         from .caffe2_export import run_and_save_graph
 
         if inputs is None:
+
             save_graph(self._predict_net, output_file, op_only=False)
+
         else:
+
             size_divisibility = get_pb_arg_vali(self._predict_net, "size_divisibility", 0)
+
             device = get_pb_arg_vals(self._predict_net, "device", b"cpu").decode("ascii")
+
             inputs = convert_batched_inputs_to_c2_format(inputs, size_divisibility, device)
             inputs = [x.cpu().numpy() for x in inputs]
+
             run_and_save_graph(self._predict_net, self._init_net, inputs, output_file)
 
     @staticmethod
@@ -206,11 +226,15 @@ class Caffe2Model(nn.Module):
             Caffe2Model: the caffe2 model loaded from this directory.
         """
         predict_net = caffe2_pb2.NetDef()
+
         with PathManager.open(os.path.join(dir, "model.pb"), "rb") as f:
+            #
             predict_net.ParseFromString(f.read())
 
         init_net = caffe2_pb2.NetDef()
+
         with PathManager.open(os.path.join(dir, "model_init.pb"), "rb") as f:
+            #
             init_net.ParseFromString(f.read())
 
         return Caffe2Model(predict_net, init_net)
@@ -226,5 +250,7 @@ class Caffe2Model(nn.Module):
         on detectron2 in order to convert to detectron2's output format.
         """
         if self._predictor is None:
+            #
             self._predictor = ProtobufDetectionModel(self._predict_net, self._init_net)
+            
         return self._predictor(inputs)

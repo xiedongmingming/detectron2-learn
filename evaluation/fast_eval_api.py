@@ -3,6 +3,7 @@ import copy
 import logging
 import numpy as np
 import time
+
 from pycocotools.cocoeval import COCOeval
 
 from detectron2 import _C
@@ -27,14 +28,22 @@ class COCOeval_opt(COCOeval):
         tic = time.time()
 
         p = self.params
+        
         # add backward compatibility if useSegm is specified in params
         if p.useSegm is not None:
+            
             p.iouType = "segm" if p.useSegm == 1 else "bbox"
+            
         logger.info("Evaluate annotation type *{}*".format(p.iouType))
+        
         p.imgIds = list(np.unique(p.imgIds))
+        
         if p.useCats:
+            
             p.catIds = list(np.unique(p.catIds))
+            
         p.maxDets = sorted(p.maxDets)
+        
         self.params = p
 
         self._prepare()  # bottleneck
@@ -46,6 +55,7 @@ class COCOeval_opt(COCOeval):
             computeIoU = self.computeIoU
         elif p.iouType == "keypoints":
             computeIoU = self.computeOks
+            
         self.ious = {
             (imgId, catId): computeIoU(imgId, catId) for imgId in p.imgIds for catId in catIds
         }  # bottleneck
@@ -57,7 +67,9 @@ class COCOeval_opt(COCOeval):
             # Convert annotations for a list of instances in an image to a format that's fast
             # to access in C++
             instances_cpp = []
+            
             for instance in instances:
+                
                 instance_cpp = _C.InstanceAnnotation(
                     int(instance["id"]),
                     instance["score"] if is_det else instance.get("score", 0.0),
@@ -65,7 +77,9 @@ class COCOeval_opt(COCOeval):
                     bool(instance.get("iscrowd", 0)),
                     bool(instance.get("ignore", 0)),
                 )
+                
                 instances_cpp.append(instance_cpp)
+                
             return instances_cpp
 
         # Convert GT annotations, detections, and IOUs to a format that's fast to access in C++
@@ -73,26 +87,35 @@ class COCOeval_opt(COCOeval):
             [convert_instances_to_cpp(self._gts[imgId, catId]) for catId in p.catIds]
             for imgId in p.imgIds
         ]
+        
         detected_instances = [
             [convert_instances_to_cpp(self._dts[imgId, catId], is_det=True) for catId in p.catIds]
             for imgId in p.imgIds
         ]
+        
         ious = [[self.ious[imgId, catId] for catId in catIds] for imgId in p.imgIds]
 
         if not p.useCats:
+            #
             # For each image, flatten per-category lists into a single list
+            #
             ground_truth_instances = [[[o for c in i for o in c]] for i in ground_truth_instances]
+            
             detected_instances = [[[o for c in i for o in c]] for i in detected_instances]
 
         # Call C++ implementation of self.evaluateImgs()
         self._evalImgs_cpp = _C.COCOevalEvaluateImages(
             p.areaRng, maxDet, p.iouThrs, ious, ground_truth_instances, detected_instances
         )
+        
         self._evalImgs = None
 
         self._paramsEval = copy.deepcopy(self.params)
+        
         toc = time.time()
+        
         logger.info("COCOeval_opt.evaluate() finished in {:0.2f} seconds.".format(toc - tic))
+        
         # >>>> End of code differences with original COCO API
 
     def accumulate(self):
@@ -101,7 +124,9 @@ class COCOeval_opt(COCOeval):
         support changing parameter settings from those used by self.evaluate()
         """
         logger.info("Accumulating evaluation results...")
+        
         tic = time.time()
+        
         assert hasattr(
             self, "_evalImgs_cpp"
         ), "evaluate() must be called before accmulate() is called."
@@ -109,6 +134,7 @@ class COCOeval_opt(COCOeval):
         self.eval = _C.COCOevalAccumulate(self._paramsEval, self._evalImgs_cpp)
 
         # recall is num_iou_thresholds X num_categories X num_area_ranges X num_max_detections
+        
         self.eval["recall"] = np.array(self.eval["recall"]).reshape(
             self.eval["counts"][:1] + self.eval["counts"][2:]
         )
@@ -117,5 +143,7 @@ class COCOeval_opt(COCOeval):
         # num_area_ranges X num_max_detections
         self.eval["precision"] = np.array(self.eval["precision"]).reshape(self.eval["counts"])
         self.eval["scores"] = np.array(self.eval["scores"]).reshape(self.eval["counts"])
+        
         toc = time.time()
+        
         logger.info("COCOeval_opt.accumulate() finished in {:0.2f} seconds.".format(toc - tic))

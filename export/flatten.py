@@ -1,8 +1,12 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import collections
+
 from dataclasses import dataclass
+
 from typing import Callable, List, Optional, Tuple
+
 import torch
+
 from torch import nn
 
 from detectron2.structures import Boxes, Instances, ROIMasks
@@ -35,104 +39,154 @@ class Schema:
 
     @classmethod
     def flatten(cls, obj):
+
         raise NotImplementedError
 
     def __call__(self, values):
+
         raise NotImplementedError
 
     @staticmethod
     def _concat(values):
+
         ret = ()
         sizes = []
+
         for v in values:
+
             assert isinstance(v, tuple), "Flattened results must be a tuple"
+
             ret = ret + v
+
             sizes.append(len(v))
+
         return ret, sizes
 
     @staticmethod
     def _split(values, sizes):
+
         if len(sizes):
+
             expected_len = sum(sizes)
+
             assert (
                 len(values) == expected_len
             ), f"Values has length {len(values)} but expect length {expected_len}."
+
         ret = []
+
         for k in range(len(sizes)):
+
             begin, end = sum(sizes[:k]), sum(sizes[: k + 1])
+
             ret.append(values[begin:end])
+
         return ret
 
 
 @dataclass
 class ListSchema(Schema):
+
     schemas: List[Schema]  # the schemas that define how to flatten each element in the list
+
     sizes: List[int]  # the flattened length of each element
 
     def __call__(self, values):
+
         values = self._split(values, self.sizes)
+
         if len(values) != len(self.schemas):
+
             raise ValueError(
                 f"Values has length {len(values)} but schemas " f"has length {len(self.schemas)}!"
             )
+
         values = [m(v) for m, v in zip(self.schemas, values)]
+
         return list(values)
 
     @classmethod
     def flatten(cls, obj):
+
         res = [flatten_to_tuple(k) for k in obj]
+
         values, sizes = cls._concat([k[0] for k in res])
+
         return values, cls([k[1] for k in res], sizes)
 
 
 @dataclass
 class TupleSchema(ListSchema):
+
     def __call__(self, values):
+
         return tuple(super().__call__(values))
 
 
 @dataclass
 class IdentitySchema(Schema):
+
     def __call__(self, values):
+
         return values[0]
 
     @classmethod
     def flatten(cls, obj):
+
         return (obj,), cls()
 
 
 @dataclass
 class DictSchema(ListSchema):
+
     keys: List[str]
 
     def __call__(self, values):
+
         values = super().__call__(values)
+
         return dict(zip(self.keys, values))
 
     @classmethod
     def flatten(cls, obj):
+
         for k in obj.keys():
+
             if not isinstance(k, str):
+
                 raise KeyError("Only support flattening dictionaries if keys are str.")
+
         keys = sorted(obj.keys())
+
         values = [obj[k] for k in keys]
+
         ret, schema = ListSchema.flatten(values)
+
         return ret, cls(schema.schemas, schema.sizes, keys)
 
 
 @dataclass
 class InstancesSchema(DictSchema):
+
     def __call__(self, values):
+
         image_size, fields = values[-1], values[:-1]
+
         fields = super().__call__(fields)
+
         return Instances(image_size, **fields)
 
     @classmethod
     def flatten(cls, obj):
+
         ret, schema = super().flatten(obj.get_fields())
+
         size = obj.image_size
+
         if not isinstance(size, torch.Tensor):
+
             size = torch.tensor(size)
+
         return ret + (size,), schema
 
 
@@ -146,10 +200,12 @@ class TensorWrapSchema(Schema):
     class_name: str
 
     def __call__(self, values):
+        #
         return locate(self.class_name)(values[0])
 
     @classmethod
     def flatten(cls, obj):
+        #
         return (obj.tensor,), cls(_convert_target_to_string(type(obj)))
 
 
@@ -173,11 +229,17 @@ def flatten_to_tuple(obj):
         (Instances, InstancesSchema),
         ((Boxes, ROIMasks), TensorWrapSchema),
     ]
+
     for klass, schema in schemas:
+
         if isinstance(obj, klass):
+
             F = schema
+
             break
+
     else:
+
         F = IdentitySchema
 
     return F.flatten(obj)
@@ -247,73 +309,110 @@ class TracingAdapter(nn.Module):
                 generalizing the traced graph to new inputs.
         """
         super().__init__()
+
         if isinstance(model, (nn.parallel.distributed.DistributedDataParallel, nn.DataParallel)):
+
             model = model.module
+
         self.model = model
+
         if not isinstance(inputs, tuple):
+
             inputs = (inputs,)
+
         self.inputs = inputs
+
         self.allow_non_tensor = allow_non_tensor
 
         if inference_func is None:
+
             inference_func = lambda model, *inputs: model(*inputs)  # noqa
+
         self.inference_func = inference_func
 
         self.flattened_inputs, self.inputs_schema = flatten_to_tuple(inputs)
 
         if all(isinstance(x, torch.Tensor) for x in self.flattened_inputs):
+
             return
+
         if self.allow_non_tensor:
+
             self.flattened_inputs = tuple(
                 [x for x in self.flattened_inputs if isinstance(x, torch.Tensor)]
             )
+
             self.inputs_schema = None
+
         else:
+
             for input in self.flattened_inputs:
+
                 if not isinstance(input, torch.Tensor):
+
                     raise ValueError(
                         "Inputs for tracing must only contain tensors. "
                         f"Got a {type(input)} instead."
                     )
 
     def forward(self, *args: torch.Tensor):
+
         with torch.no_grad(), patch_builtin_len():
+
             if self.inputs_schema is not None:
+
                 inputs_orig_format = self.inputs_schema(args)
+
             else:
+
                 if len(args) != len(self.flattened_inputs) or any(
                     x is not y for x, y in zip(args, self.flattened_inputs)
                 ):
+
                     raise ValueError(
                         "TracingAdapter does not contain valid inputs_schema."
                         " So it cannot generalize to other inputs and must be"
                         " traced with `.flattened_inputs`."
                     )
+
                 inputs_orig_format = self.inputs
 
             outputs = self.inference_func(self.model, *inputs_orig_format)
+
             flattened_outputs, schema = flatten_to_tuple(outputs)
 
             flattened_output_tensors = tuple(
                 [x for x in flattened_outputs if isinstance(x, torch.Tensor)]
             )
+
             if len(flattened_output_tensors) < len(flattened_outputs):
+
                 if self.allow_non_tensor:
+
                     flattened_outputs = flattened_output_tensors
+
                     self.outputs_schema = None
+
                 else:
+
                     raise ValueError(
                         "Model cannot be traced because some model outputs "
                         "cannot flatten to tensors."
                     )
+
             else:  # schema is valid
+
                 if self.outputs_schema is None:
+
                     self.outputs_schema = schema
+
                 else:
+
                     assert self.outputs_schema == schema, (
                         "Model should always return outputs with the same "
                         "structure so it can be traced!"
                     )
+
             return flattened_outputs
 
     def _create_wrapper(self, traced_model):
@@ -323,8 +422,10 @@ class TracingAdapter(nn.Module):
         """
 
         def forward(*args):
+
             flattened_inputs, _ = flatten_to_tuple(args)
             flattened_outputs = traced_model(*flattened_inputs)
+            
             return self.outputs_schema(flattened_outputs)
 
         return forward

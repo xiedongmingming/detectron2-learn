@@ -191,7 +191,9 @@ def configurable(init_func=None, *, from_config=None):
         def wrapped(self, *args, **kwargs):
             
             try:
+
                 from_config_func = type(self).from_config
+
             except AttributeError as e:
                 
                 raise AttributeError(
@@ -207,7 +209,9 @@ def configurable(init_func=None, *, from_config=None):
                 explicit_args = _get_args_from_config(from_config_func, *args, **kwargs)
                 
                 init_func(self, **explicit_args)
+
             else:
+
                 init_func(self, *args, **kwargs)
 
         return wrapped
@@ -268,7 +272,9 @@ def _get_args_from_config(from_config_func, *args, **kwargs):
     )
     
     if support_var_arg:  # forward all arguments to from_config, if from_config accepts them
+
         ret = from_config_func(*args, **kwargs)
+
     else:
         
         # forward supported arguments to from_config

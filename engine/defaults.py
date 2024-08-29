@@ -133,6 +133,7 @@ Run on multiple machines:
         "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
     )
 
+    # PYTORCH训练会有孤儿进程
     # PyTorch still may leave orphan processes in multi-gpu training.
     # Therefore we use a deterministic way to obtain port,
     # so that users are aware of orphan processes by seeing the port occupied.

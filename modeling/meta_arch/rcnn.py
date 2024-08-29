@@ -34,7 +34,7 @@ class GeneralizedRCNN(nn.Module):  # 广义R-CNN：
     3. Per-region feature extraction and prediction
     """
 
-    @configurable
+    @configurable # 修饰
     def __init__(
         self,
         *,
@@ -56,11 +56,11 @@ class GeneralizedRCNN(nn.Module):  # 广义R-CNN：
         """
         super().__init__()
 
-        self.backbone = backbone
+        self.backbone = backbone  # FPN
 
-        self.proposal_generator = proposal_generator
+        self.proposal_generator = proposal_generator  # RPN
 
-        self.roi_heads = roi_heads
+        self.roi_heads = roi_heads  # CascadeROIHeads
 
         self.input_format = input_format
 
@@ -82,7 +82,7 @@ class GeneralizedRCNN(nn.Module):  # 广义R-CNN：
 
         backbone = build_backbone(cfg)  # build_vit_fpn_backbone
 
-        return {
+        return { # 作为INIT方法的参数 -- @configurable
             "backbone": backbone,
             "proposal_generator": build_proposal_generator(cfg, backbone.output_shape()),
             "roi_heads": build_roi_heads(cfg, backbone.output_shape()),

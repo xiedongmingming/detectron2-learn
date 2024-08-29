@@ -13,7 +13,6 @@ class ShapeSpec:
     It is often used as the auxiliary inputs/outputs of models,
     to complement the lack of shape inference ability among pytorch modules.
     """
-
     channels: Optional[int] = None
     height: Optional[int] = None
     width: Optional[int] = None

@@ -2,10 +2,13 @@
 import datetime
 import logging
 import time
+
 from collections import OrderedDict, abc
 from contextlib import ExitStack, contextmanager
 from typing import List, Union
+
 import torch
+
 from torch import nn
 
 from detectron2.utils.comm import get_world_size, is_main_process
@@ -77,26 +80,38 @@ class DatasetEvaluators(DatasetEvaluator):
             evaluators (list): the evaluators to combine.
         """
         super().__init__()
+        
         self._evaluators = evaluators
 
     def reset(self):
+        
         for evaluator in self._evaluators:
+            
             evaluator.reset()
 
     def process(self, inputs, outputs):
+        
         for evaluator in self._evaluators:
+            
             evaluator.process(inputs, outputs)
 
     def evaluate(self):
+        
         results = OrderedDict()
+        
         for evaluator in self._evaluators:
+            
             result = evaluator.evaluate()
+            
             if is_main_process() and result is not None:
+                
                 for k, v in result.items():
+                    
                     assert (
                         k not in results
                     ), "Different evaluators produce results with the same key {}".format(k)
                     results[k] = v
+                    
         return results
 
 
@@ -129,43 +144,67 @@ def inference_on_dataset(
         The return value of `evaluator.evaluate()`
     """
     num_devices = get_world_size()
+    
     logger = logging.getLogger(__name__)
+    
     logger.info("Start inference on {} batches".format(len(data_loader)))
 
     total = len(data_loader)  # inference data loader must have a fixed length
+    
     if evaluator is None:
+        
         # create a no-op evaluator
         evaluator = DatasetEvaluators([])
+        
     if isinstance(evaluator, abc.MutableSequence):
+        
         evaluator = DatasetEvaluators(evaluator)
+        
     evaluator.reset()
 
     num_warmup = min(5, total - 1)
+    
     start_time = time.perf_counter()
+    
     total_data_time = 0
     total_compute_time = 0
     total_eval_time = 0
+    
     with ExitStack() as stack:
+        
         if isinstance(model, nn.Module):
+            
             stack.enter_context(inference_context(model))
+            
         stack.enter_context(torch.no_grad())
 
         start_data_time = time.perf_counter()
+        
         dict.get(callbacks or {}, "on_start", lambda: None)()
+        
         for idx, inputs in enumerate(data_loader):
+            
             total_data_time += time.perf_counter() - start_data_time
+            
             if idx == num_warmup:
+                
                 start_time = time.perf_counter()
                 total_data_time = 0
                 total_compute_time = 0
                 total_eval_time = 0
 
             start_compute_time = time.perf_counter()
+            
             dict.get(callbacks or {}, "before_inference", lambda: None)()
+            
             outputs = model(inputs)
+            
             dict.get(callbacks or {}, "after_inference", lambda: None)()
+            
             if torch.cuda.is_available():
+                
                 torch.cuda.synchronize()
+                
             total_compute_time += time.perf_counter() - start_compute_time
 
             start_eval_time = time.perf_counter()
@@ -177,8 +216,11 @@ def inference_on_dataset(
             compute_seconds_per_iter = total_compute_time / iters_after_start
             eval_seconds_per_iter = total_eval_time / iters_after_start
             total_seconds_per_iter = (time.perf_counter() - start_time) / iters_after_start
+            
             if idx >= num_warmup * 2 or compute_seconds_per_iter > 5:
+                
                 eta = datetime.timedelta(seconds=int(total_seconds_per_iter * (total - idx - 1)))
+                
                 log_every_n_seconds(
                     logging.INFO,
                     (
@@ -191,19 +233,24 @@ def inference_on_dataset(
                     ),
                     n=5,
                 )
+                
             start_data_time = time.perf_counter()
+            
         dict.get(callbacks or {}, "on_end", lambda: None)()
 
     # Measure the time only for this worker (before the synchronization barrier)
     total_time = time.perf_counter() - start_time
     total_time_str = str(datetime.timedelta(seconds=total_time))
+    
     # NOTE this format is parsed by grep
     logger.info(
         "Total inference time: {} ({:.6f} s / iter per device, on {} devices)".format(
             total_time_str, total_time / (total - num_warmup), num_devices
         )
     )
+    
     total_compute_time_str = str(datetime.timedelta(seconds=int(total_compute_time)))
+    
     logger.info(
         "Total inference pure compute time: {} ({:.6f} s / iter per device, on {} devices)".format(
             total_compute_time_str, total_compute_time / (total - num_warmup), num_devices
@@ -211,10 +258,13 @@ def inference_on_dataset(
     )
 
     results = evaluator.evaluate()
+    
     # An evaluator may return None when not in main process.
     # Replace it by an empty dict instead to make it easier for downstream code to handle
     if results is None:
+        
         results = {}
+        
     return results
 
 
@@ -228,6 +278,9 @@ def inference_context(model):
         model: a torch Module
     """
     training_mode = model.training
+    
     model.eval()
+    
     yield
+    
     model.train(training_mode)

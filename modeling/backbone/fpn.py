@@ -62,15 +62,16 @@ class FPN(Backbone):
         super(FPN, self).__init__()
 
         assert isinstance(bottom_up, Backbone)
+
         assert in_features, in_features
 
         # feature map strides and channels from the bottom up network (e.g. ResNet)
         input_shapes = bottom_up.output_shape()
 
         # {
-        #       'layer3': ShapeSpec(channels=768, height=None, width=None, stride=4),
-        #       'layer5': ShapeSpec(channels=768, height=None, width=None, stride=8),
-        #       'layer7': ShapeSpec(channels=768, height=None, width=None, stride=16),
+        #       'layer3':  ShapeSpec(channels=768, height=None, width=None, stride=4 ),
+        #       'layer5':  ShapeSpec(channels=768, height=None, width=None, stride=8 ),
+        #       'layer7':  ShapeSpec(channels=768, height=None, width=None, stride=16),
         #       'layer11': ShapeSpec(channels=768, height=None, width=None, stride=32)
         # }
 
@@ -78,17 +79,17 @@ class FPN(Backbone):
 
         in_channels_per_feature = [input_shapes[f].channels for f in in_features] # [768, 768, 768, 768]
 
-        _assert_strides_are_log2_contiguous(strides)
+        _assert_strides_are_log2_contiguous(strides) # 检验2指数值
 
         lateral_convs = []
         output_convs = []
 
         use_bias = norm == ""
 
-        for idx, in_channels in enumerate(in_channels_per_feature):
+        for idx, in_channels in enumerate(in_channels_per_feature): # [768, 768, 768, 768]
 
-            lateral_norm = get_norm(norm, out_channels)
-            output_norm = get_norm(norm, out_channels)
+            lateral_norm = get_norm(norm, out_channels)  # None
+            output_norm = get_norm(norm, out_channels)  # None
 
             lateral_conv = Conv2d(
                 in_channels, out_channels, kernel_size=1, bias=use_bias, norm=lateral_norm
