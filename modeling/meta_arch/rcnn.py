@@ -273,8 +273,8 @@ class GeneralizedRCNN(nn.Module):  # 广义R-CNN：
         """
         Normalize, pad and batch the input images.
         """
-        images = [self._move_to_current_device(x["image"]) for x in batched_inputs]
-        images = [(x - self.pixel_mean) / self.pixel_std for x in images]
+        images = [self._move_to_current_device(x["image"]) for x in batched_inputs] # 将图片数据转换到：Tensor
+        images = [(x - self.pixel_mean) / self.pixel_std for x in images] # pixel_mean：{Tensor：(3,1,1)}
 
         images = ImageList.from_tensors(
             images,

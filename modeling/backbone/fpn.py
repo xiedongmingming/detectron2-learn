@@ -31,7 +31,7 @@ class FPN(Backbone):
         in_features, # 底层网络生成的特征图名称（顺序高到低）：['layer3', 'layer5', 'layer7', 'layer11']
         out_channels, # 256
         norm="",
-        top_block=None,
+        top_block=None, # LastLevelMaxPool()
         fuse_type="sum",
         square_pad=0,
     ):
@@ -91,11 +91,11 @@ class FPN(Backbone):
             lateral_norm = get_norm(norm, out_channels)  # None
             output_norm = get_norm(norm, out_channels)  # None
 
-            lateral_conv = Conv2d(
+            lateral_conv = Conv2d( # 侧边1*1卷积
                 in_channels, out_channels, kernel_size=1, bias=use_bias, norm=lateral_norm
             )
 
-            output_conv = Conv2d(
+            output_conv = Conv2d( # 侧边1*1卷积+上一层上采样之后的值之后卷积作为输出
                 out_channels,
                 out_channels,
                 kernel_size=3,
@@ -105,8 +105,8 @@ class FPN(Backbone):
                 norm=output_norm,
             )
 
-            weight_init.c2_xavier_fill(lateral_conv)
-            weight_init.c2_xavier_fill(output_conv)
+            weight_init.c2_xavier_fill(lateral_conv) # 初始化卷积核
+            weight_init.c2_xavier_fill(output_conv) # 初始化卷积核
 
             stage = int(math.log2(strides[idx]))
 
@@ -118,10 +118,13 @@ class FPN(Backbone):
             output_convs.append(output_conv)
 
         # Place convs into top-down order (from low to high resolution) to make the top-down computation in forward clearer.
-        self.lateral_convs = lateral_convs[::-1]
+        self.lateral_convs = lateral_convs[::-1] # 调转顺序（top->down）
         self.output_convs = output_convs[::-1]
+
         self.top_block = top_block
+
         self.in_features = tuple(in_features)
+
         self.bottom_up = bottom_up
 
         # Return feature names are "p<stage>", like ["p2", "p3", ..., "p6"]
@@ -135,13 +138,18 @@ class FPN(Backbone):
                 self._out_feature_strides["p{}".format(s + 1)] = 2 ** (s + 1)
 
         self._out_features = list(self._out_feature_strides.keys())
-        self._out_feature_channels = {k: out_channels for k in self._out_features}
+
+        self._out_feature_channels = {
+            k: out_channels for k in self._out_features
+        }
+
         self._size_divisibility = strides[-1]
+
         self._square_pad = square_pad
 
         assert fuse_type in {"avg", "sum"}
 
-        self._fuse_type = fuse_type
+        self._fuse_type = fuse_type #
 
     @property
     def size_divisibility(self):
@@ -166,13 +174,19 @@ class FPN(Backbone):
                 paper convention: "p<stage>", where stage has stride = 2 ** stage e.g.,
                 ["p2", "p3", ..., "p6"].
         """
-        bottom_up_features = self.bottom_up(x)
 
+        bottom_up_features = self.bottom_up(x) # x: {"images": tensor(4,3,1024,736)}
+        # {
+        #     'layer3': {Tensor: (4, 768, 256, 184)},
+        #     'layer5': {Tensor: (4, 768, 128, 92)},
+        #     'layer7': {Tensor: (4, 768, 64, 46)},
+        #     'layer11': {Tensor: (4, 768, 32, 23)}
+        # }
         results = []
 
-        prev_features = self.lateral_convs[0](bottom_up_features[self.in_features[-1]])
+        prev_features = self.lateral_convs[0](bottom_up_features[self.in_features[-1]]) # {Tensor: (4,768, 32, 23)} -> Conv2d(768, 256, kernel_size=(1, 1), stride=(1, 1)) = {Tensor: (4, 256, 32, 23)}
 
-        results.append(self.output_convs[0](prev_features))
+        results.append(self.output_convs[0](prev_features)) # {Tensor: (4, 256, 32, 23)} -> Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)) = {Tensor: (4, 256, 32, 23)}
 
         # Reverse feature maps into top-down order (from low to high resolution)
         for idx, (lateral_conv, output_conv) in enumerate(
@@ -185,11 +199,11 @@ class FPN(Backbone):
                 features = self.in_features[-idx - 1]
                 features = bottom_up_features[features]
 
-                top_down_features = F.interpolate(prev_features, scale_factor=2.0, mode="nearest")
+                top_down_features = F.interpolate(prev_features, scale_factor=2.0, mode="nearest") # 上采样：{Tensor：(4, 256, 32, 23)} -> {Tensor: {4, 256, 64, 46}}
 
                 lateral_features = lateral_conv(features)
 
-                prev_features = lateral_features + top_down_features
+                prev_features = lateral_features + top_down_features # 对应值相加不改变任何结构 
 
                 if self._fuse_type == "avg":
 
@@ -197,14 +211,14 @@ class FPN(Backbone):
 
                 results.insert(0, output_conv(prev_features))
 
-        if self.top_block is not None:
+        if self.top_block is not None: # LastLevelMaxPool()
 
-            if self.top_block.in_feature in bottom_up_features:
+            if self.top_block.in_feature in bottom_up_features:  # p5 in {layer3,layer5,...}
                 top_block_in_feature = bottom_up_features[self.top_block.in_feature]
             else:
-                top_block_in_feature = results[self._out_features.index(self.top_block.in_feature)]
+                top_block_in_feature = results[self._out_features.index(self.top_block.in_feature)]  # ['p2', 'p3', 'p4', 'p5', 'p6']
 
-            results.extend(self.top_block(top_block_in_feature))
+            results.extend(self.top_block(top_block_in_feature)) # {Tensor: (4, 256, 32, 23)}
 
         assert len(self._out_features) == len(results)
 
@@ -231,7 +245,7 @@ def _assert_strides_are_log2_contiguous(strides):
         )
 
 
-class LastLevelMaxPool(nn.Module):
+class LastLevelMaxPool(nn.Module): # 通过P5获取P6
     """
     This module is used in the original FPN to generate a downsampled
     P6 feature from P5.
