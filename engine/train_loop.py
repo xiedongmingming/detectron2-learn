@@ -182,7 +182,7 @@ class TrainerBase:
                 # self.iter == max_iter can be used by `after_train` to
                 # tell whether the training successfully finished or failed
                 # due to exceptions.
-                self.iter += 1
+                self.iter += 1  # EPOCH
                 
             except Exception:
                 
@@ -208,7 +208,7 @@ class TrainerBase:
             
             h.after_train()
 
-    def before_step(self):
+    def before_step(self):  # 一次迭代
         #
         # Maintain the invariant that storage.iter == trainer.iter for the entire execution of each step
         #
@@ -338,13 +338,20 @@ class SimpleTrainer(TrainerBase):
         model.train()
 
         self.model = model
+
         self.data_loader = data_loader
+
         # to access the data loader iterator, call `self._data_loader_iter`
         self._data_loader_iter_obj = None
+
         self.optimizer = optimizer
+
         self.gather_metric_period = gather_metric_period
+
         self.zero_grad_before_forward = zero_grad_before_forward
+
         self.async_write_metrics = async_write_metrics
+
         # create a thread pool that can execute non critical logic in run_step asynchronically
         # use only 1 worker so tasks will be executred in order of submitting.
         self.concurrent_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -354,7 +361,9 @@ class SimpleTrainer(TrainerBase):
         Implement the standard training logic described above.
         """
         assert self.model.training, "[SimpleTrainer] model was changed to eval mode!"
+
         start = time.perf_counter()
+
         """
         If you want to do something with the data, you can wrap the dataloader.
         """
@@ -395,11 +404,15 @@ class SimpleTrainer(TrainerBase):
         self.after_backward()
 
         if self.async_write_metrics:
+
             # write metrics asynchronically
+
             self.concurrent_executor.submit(
                 self._write_metrics, loss_dict, data_time, iter=self.iter
             )
+
         else:
+
             self._write_metrics(loss_dict, data_time)
 
         """
@@ -411,7 +424,9 @@ class SimpleTrainer(TrainerBase):
 
     @property
     def _data_loader_iter(self):
+
         # only create the data loader iterator when it is used
+
         if self._data_loader_iter_obj is None:
 
             self._data_loader_iter_obj = iter(self.data_loader)
@@ -428,6 +443,7 @@ class SimpleTrainer(TrainerBase):
         data_loader = data_loader_builder()
 
         self.data_loader = data_loader
+
         self._data_loader_iter_obj = None
 
     def _write_metrics(
@@ -468,9 +484,11 @@ class SimpleTrainer(TrainerBase):
             prefix (str): prefix for logging keys
         """
         metrics_dict = {k: v.detach().cpu().item() for k, v in loss_dict.items()}
+
         metrics_dict["data_time"] = data_time
 
         storage = get_event_storage()
+
         # Keep track of data time per rank
         storage.put_scalar("rank_data_time", data_time, cur_iter=cur_iter)
 
@@ -556,8 +574,11 @@ class AMPTrainer(SimpleTrainer):
             precision: torch.dtype as the target precision to cast to in computations
         """
         unsupported = "AMPTrainer does not support single-process multi-device training!"
+
         if isinstance(model, DistributedDataParallel):
+
             assert not (model.device_ids and len(model.device_ids) > 1), unsupported
+
         assert not isinstance(model, DataParallel), unsupported
 
         super().__init__(
@@ -565,11 +586,15 @@ class AMPTrainer(SimpleTrainer):
         )
 
         if grad_scaler is None:
+
             from torch.cuda.amp import GradScaler
 
             grad_scaler = GradScaler()
+
         self.grad_scaler = grad_scaler
+        
         self.precision = precision
+
         self.log_grad_scaler = log_grad_scaler
 
     def run_step(self):
@@ -577,17 +602,25 @@ class AMPTrainer(SimpleTrainer):
         Implement the AMP training logic.
         """
         assert self.model.training, "[AMPTrainer] model was changed to eval mode!"
+
         assert torch.cuda.is_available(), "[AMPTrainer] CUDA is required for AMP training!"
+
         from torch.cuda.amp import autocast
 
         start = time.perf_counter()
+
         data = next(self._data_loader_iter)
+
         data_time = time.perf_counter() - start
 
         if self.zero_grad_before_forward:
+
             self.optimizer.zero_grad()
+
         with autocast(dtype=self.precision):
+
             loss_dict = self.model(data)
+
             if isinstance(loss_dict, torch.Tensor):
                 losses = loss_dict
                 loss_dict = {"total_loss": loss_dict}
@@ -595,32 +628,43 @@ class AMPTrainer(SimpleTrainer):
                 losses = sum(loss_dict.values())
 
         if not self.zero_grad_before_forward:
+            #
             self.optimizer.zero_grad()
 
         self.grad_scaler.scale(losses).backward()
 
         if self.log_grad_scaler:
+
             storage = get_event_storage()
+
             storage.put_scalar("[metric]grad_scaler", self.grad_scaler.get_scale())
 
         self.after_backward()
 
         if self.async_write_metrics:
+            #
             # write metrics asynchronically
+            #
             self.concurrent_executor.submit(
                 self._write_metrics, loss_dict, data_time, iter=self.iter
             )
+
         else:
+
             self._write_metrics(loss_dict, data_time)
 
         self.grad_scaler.step(self.optimizer)
         self.grad_scaler.update()
 
     def state_dict(self):
+
         ret = super().state_dict()
         ret["grad_scaler"] = self.grad_scaler.state_dict()
+
         return ret
 
     def load_state_dict(self, state_dict):
+
         super().load_state_dict(state_dict)
+
         self.grad_scaler.load_state_dict(state_dict["grad_scaler"])

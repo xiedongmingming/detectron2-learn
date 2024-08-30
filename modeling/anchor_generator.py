@@ -116,16 +116,22 @@ class DefaultAnchorGenerator(nn.Module):
         super().__init__()
 
         self.strides = strides
+        
         self.num_features = len(self.strides)
+        
         sizes = _broadcast_params(sizes, self.num_features, "sizes")
+        
         aspect_ratios = _broadcast_params(aspect_ratios, self.num_features, "aspect_ratios")
+        
         self.cell_anchors = self._calculate_anchors(sizes, aspect_ratios)
 
         self.offset = offset
+        
         assert 0.0 <= self.offset < 1.0, self.offset
 
     @classmethod
     def from_config(cls, cfg, input_shape: List[ShapeSpec]):
+        
         return {
             "sizes": cfg.MODEL.ANCHOR_GENERATOR.SIZES,
             "aspect_ratios": cfg.MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS,
@@ -134,9 +140,11 @@ class DefaultAnchorGenerator(nn.Module):
         }
 
     def _calculate_anchors(self, sizes, aspect_ratios):
+        
         cell_anchors = [
             self.generate_cell_anchors(s, a).float() for s, a in zip(sizes, aspect_ratios)
         ]
+        
         return BufferList(cell_anchors)
 
     @property
@@ -168,10 +176,15 @@ class DefaultAnchorGenerator(nn.Module):
             list[Tensor]: #featuremap tensors, each is (#locations x #cell_anchors) x 4
         """
         anchors = []
+        
         # buffers() not supported by torchscript. use named_buffers() instead
+        
         buffers: List[torch.Tensor] = [x[1] for x in self.cell_anchors.named_buffers()]
+        
         for size, stride, base_anchors in zip(grid_sizes, self.strides, buffers):
+            
             shift_x, shift_y = _create_grid_offsets(size, stride, self.offset, base_anchors)
+            
             shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1)
 
             anchors.append((shifts.view(-1, 1, 4) + base_anchors.view(1, -1, 4)).reshape(-1, 4))
@@ -201,18 +214,27 @@ class DefaultAnchorGenerator(nn.Module):
         # See also https://github.com/facebookresearch/Detectron/issues/227
 
         anchors = []
+        
         for size in sizes:
+            
             area = size**2.0
+            
             for aspect_ratio in aspect_ratios:
+                #
                 # s * s = w * h
                 # a = h / w
                 # ... some algebra ...
                 # w = sqrt(s * s / a)
                 # h = a * w
+                #
                 w = math.sqrt(area / aspect_ratio)
+                
                 h = aspect_ratio * w
+                
                 x0, y0, x1, y1 = -w / 2.0, -h / 2.0, w / 2.0, h / 2.0
+                
                 anchors.append([x0, y0, x1, y1])
+                
         return torch.tensor(anchors)
 
     def forward(self, features: List[torch.Tensor]):
@@ -227,7 +249,9 @@ class DefaultAnchorGenerator(nn.Module):
                 where Hi, Wi are resolution of the feature map divided by anchor stride.
         """
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
+        
         anchors_over_all_feature_maps = self._grid_anchors(grid_sizes)  # pyre-ignore
+        
         return [Boxes(x) for x in anchors_over_all_feature_maps]
 
 
@@ -267,17 +291,24 @@ class RotatedAnchorGenerator(nn.Module):
         super().__init__()
 
         self.strides = strides
+        
         self.num_features = len(self.strides)
+        
         sizes = _broadcast_params(sizes, self.num_features, "sizes")
+        
         aspect_ratios = _broadcast_params(aspect_ratios, self.num_features, "aspect_ratios")
+        
         angles = _broadcast_params(angles, self.num_features, "angles")
+        
         self.cell_anchors = self._calculate_anchors(sizes, aspect_ratios, angles)
 
         self.offset = offset
+        
         assert 0.0 <= self.offset < 1.0, self.offset
 
     @classmethod
     def from_config(cls, cfg, input_shape: List[ShapeSpec]):
+        
         return {
             "sizes": cfg.MODEL.ANCHOR_GENERATOR.SIZES,
             "aspect_ratios": cfg.MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS,
@@ -287,10 +318,12 @@ class RotatedAnchorGenerator(nn.Module):
         }
 
     def _calculate_anchors(self, sizes, aspect_ratios, angles):
+        
         cell_anchors = [
             self.generate_cell_anchors(size, aspect_ratio, angle).float()
             for size, aspect_ratio, angle in zip(sizes, aspect_ratios, angles)
         ]
+        
         return BufferList(cell_anchors)
 
     @property
@@ -316,14 +349,19 @@ class RotatedAnchorGenerator(nn.Module):
         return [len(cell_anchors) for cell_anchors in self.cell_anchors]
 
     def _grid_anchors(self, grid_sizes: List[List[int]]):
+        
         anchors = []
+        
         for size, stride, base_anchors in zip(
             grid_sizes,
             self.strides,
             self.cell_anchors._buffers.values(),
         ):
+            
             shift_x, shift_y = _create_grid_offsets(size, stride, self.offset, base_anchors)
+            
             zeros = torch.zeros_like(shift_x)
+            
             shifts = torch.stack((shift_x, shift_y, zeros, zeros, zeros), dim=1)
 
             anchors.append((shifts.view(-1, 1, 5) + base_anchors.view(1, -1, 5)).reshape(-1, 5))
@@ -352,8 +390,11 @@ class RotatedAnchorGenerator(nn.Module):
                 storing anchor boxes in (x_ctr, y_ctr, w, h, angle) format.
         """
         anchors = []
+        
         for size in sizes:
+            
             area = size**2.0
+            
             for aspect_ratio in aspect_ratios:
                 # s * s = w * h
                 # a = h / w
@@ -361,7 +402,9 @@ class RotatedAnchorGenerator(nn.Module):
                 # w = sqrt(s * s / a)
                 # h = a * w
                 w = math.sqrt(area / aspect_ratio)
+                
                 h = aspect_ratio * w
+                
                 anchors.extend([0, 0, w, h, a] for a in angles)
 
         return torch.tensor(anchors)
@@ -378,7 +421,9 @@ class RotatedAnchorGenerator(nn.Module):
                 where Hi, Wi are resolution of the feature map divided by anchor stride.
         """
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
+        
         anchors_over_all_feature_maps = self._grid_anchors(grid_sizes)
+        
         return [RotatedBoxes(x) for x in anchors_over_all_feature_maps]
 
 
@@ -386,5 +431,6 @@ def build_anchor_generator(cfg, input_shape):
     """
     Built an anchor generator from `cfg.MODEL.ANCHOR_GENERATOR.NAME`.
     """
-    anchor_generator = cfg.MODEL.ANCHOR_GENERATOR.NAME
+    anchor_generator = cfg.MODEL.ANCHOR_GENERATOR.NAME  # DefaultAnchorGenerator
+
     return ANCHOR_GENERATOR_REGISTRY.get(anchor_generator)(cfg, input_shape)

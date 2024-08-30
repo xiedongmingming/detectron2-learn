@@ -32,7 +32,7 @@ class FPN(Backbone):
         out_channels, # 256
         norm="",
         top_block=None, # LastLevelMaxPool()
-        fuse_type="sum",
+        fuse_type="sum", # 
         square_pad=0,
     ):
         """

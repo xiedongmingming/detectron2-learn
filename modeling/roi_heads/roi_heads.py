@@ -2,8 +2,11 @@
 import inspect
 import logging
 import numpy as np
+
 from typing import Dict, List, Optional, Tuple
+
 import torch
+
 from torch import nn
 
 from detectron2.config import configurable
@@ -39,13 +42,14 @@ def build_roi_heads(cfg, input_shape):
     """
     Build ROIHeads defined by `cfg.MODEL.ROI_HEADS.NAME`.
     """
-    name = cfg.MODEL.ROI_HEADS.NAME #  CascadeROIHeads
+    name = cfg.MODEL.ROI_HEADS.NAME  # CascadeROIHeads
     
     return ROI_HEADS_REGISTRY.get(name)(cfg, input_shape)
 
 
 def select_foreground_proposals(
-    proposals: List[Instances], bg_label: int
+    proposals: List[Instances], # 批量图片（每个图片会有多个实例）
+    bg_label: int
 ) -> Tuple[List[Instances], List[torch.Tensor]]:
     """
     Given a list of N Instances (for N images), each containing a `gt_classes` field,
@@ -668,8 +672,11 @@ class StandardROIHeads(ROIHeads):
         
         # keep self.in_features for backward compatibility
         self.in_features = self.box_in_features = box_in_features
+
         self.box_pooler = box_pooler
+
         self.box_head = box_head
+
         self.box_predictor = box_predictor
 
         self.mask_on = mask_in_features is not None
@@ -704,10 +711,15 @@ class StandardROIHeads(ROIHeads):
         # Such subclasses will need to handle calling their overridden _init_*_head methods.
         
         if inspect.ismethod(cls._init_box_head):
+
             ret.update(cls._init_box_head(cfg, input_shape))
+
         if inspect.ismethod(cls._init_mask_head):
+
             ret.update(cls._init_mask_head(cfg, input_shape))
+
         if inspect.ismethod(cls._init_keypoint_head):
+
             ret.update(cls._init_keypoint_head(cfg, input_shape))
             
         return ret

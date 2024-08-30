@@ -52,7 +52,7 @@ def verify_results(cfg, results):
 
     ok = True
 
-    for task, metric, expected, tolerance in expected_results:
+    for task, metric, expected, tolerance in expected_results:  # [['bbox', 'AP', 38.5, 0.2]]
 
         actual = results[task].get(metric, None)
 

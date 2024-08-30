@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from typing import List
+
 import torch
 
 from detectron2.layers import nonzero_tuple
@@ -48,15 +49,22 @@ class Matcher:
         """
         # Add -inf and +inf to first and last position in thresholds
         thresholds = thresholds[:]
+
         assert thresholds[0] > 0
+
         thresholds.insert(0, -float("inf"))
         thresholds.append(float("inf"))
+
         # Currently torchscript does not support all + generator
         assert all([low <= high for (low, high) in zip(thresholds[:-1], thresholds[1:])])
         assert all([l in [-1, 0, 1] for l in labels])
+
         assert len(labels) == len(thresholds) - 1
+
         self.thresholds = thresholds
+
         self.labels = labels
+
         self.allow_low_quality_matches = allow_low_quality_matches
 
     def __call__(self, match_quality_matrix):
@@ -74,16 +82,20 @@ class Matcher:
                 whether a prediction is a true or false positive or ignored
         """
         assert match_quality_matrix.dim() == 2
+
         if match_quality_matrix.numel() == 0:
+
             default_matches = match_quality_matrix.new_full(
                 (match_quality_matrix.size(1),), 0, dtype=torch.int64
             )
+
             # When no gt boxes exist, we define IOU = 0 and therefore set labels
             # to `self.labels[0]`, which usually defaults to background class 0
             # To choose to ignore instead, can make labels=[-1,0,-1,1] + set appropriate thresholds
             default_match_labels = match_quality_matrix.new_full(
                 (match_quality_matrix.size(1),), self.labels[0], dtype=torch.int8
             )
+
             return default_matches, default_match_labels
 
         assert torch.all(match_quality_matrix >= 0)
@@ -95,10 +107,13 @@ class Matcher:
         match_labels = matches.new_full(matches.size(), 1, dtype=torch.int8)
 
         for l, low, high in zip(self.labels, self.thresholds[:-1], self.thresholds[1:]):
+
             low_high = (matched_vals >= low) & (matched_vals < high)
+
             match_labels[low_high] = l
 
         if self.allow_low_quality_matches:
+            #
             self.set_low_quality_matches_(match_labels, match_quality_matrix)
 
         return matches, match_labels
@@ -118,6 +133,7 @@ class Matcher:
         # Find the highest quality match available, even if it is low, including ties.
         # Note that the matches qualities must be positive due to the use of
         # `torch.nonzero`.
+        
         _, pred_inds_with_highest_quality = nonzero_tuple(
             match_quality_matrix == highest_quality_foreach_gt[:, None]
         )

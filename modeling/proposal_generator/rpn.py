@@ -276,16 +276,24 @@ class RPN(nn.Module):
         self.rpn_head = head
         
         self.anchor_generator = anchor_generator
+
         self.anchor_matcher = anchor_matcher
+
         self.box2box_transform = box2box_transform
+
         self.batch_size_per_image = batch_size_per_image
+
         self.positive_fraction = positive_fraction
         
         # Map from self.training state to train/test settings
         self.pre_nms_topk = {True: pre_nms_topk[0], False: pre_nms_topk[1]}
+
         self.post_nms_topk = {True: post_nms_topk[0], False: post_nms_topk[1]}
+
         self.nms_thresh = nms_thresh
+
         self.min_box_size = float(min_box_size)
+
         self.anchor_boundary_thresh = anchor_boundary_thresh
         
         if isinstance(loss_weight, float):
@@ -293,34 +301,36 @@ class RPN(nn.Module):
             loss_weight = {"loss_rpn_cls": loss_weight, "loss_rpn_loc": loss_weight}
             
         self.loss_weight = loss_weight
+
         self.box_reg_loss_type = box_reg_loss_type
+
         self.smooth_l1_beta = smooth_l1_beta
 
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
         
-        in_features = cfg.MODEL.RPN.IN_FEATURES
+        in_features = cfg.MODEL.RPN.IN_FEATURES   # ["p2", "p3", "p4", "p5", "p6"]
         
         ret = {
             "in_features": in_features,
-            "min_box_size": cfg.MODEL.PROPOSAL_GENERATOR.MIN_SIZE,
-            "nms_thresh": cfg.MODEL.RPN.NMS_THRESH,
-            "batch_size_per_image": cfg.MODEL.RPN.BATCH_SIZE_PER_IMAGE,
-            "positive_fraction": cfg.MODEL.RPN.POSITIVE_FRACTION,
-            "loss_weight": {
+            "min_box_size": cfg.MODEL.PROPOSAL_GENERATOR.MIN_SIZE, # 0
+            "nms_thresh": cfg.MODEL.RPN.NMS_THRESH, # 0.7
+            "batch_size_per_image": cfg.MODEL.RPN.BATCH_SIZE_PER_IMAGE, # 256
+            "positive_fraction": cfg.MODEL.RPN.POSITIVE_FRACTION, # 0.5
+            "loss_weight": { # 1.0  1.0
                 "loss_rpn_cls": cfg.MODEL.RPN.LOSS_WEIGHT,
                 "loss_rpn_loc": cfg.MODEL.RPN.BBOX_REG_LOSS_WEIGHT * cfg.MODEL.RPN.LOSS_WEIGHT,
             },
-            "anchor_boundary_thresh": cfg.MODEL.RPN.BOUNDARY_THRESH,
-            "box2box_transform": Box2BoxTransform(weights=cfg.MODEL.RPN.BBOX_REG_WEIGHTS),
-            "box_reg_loss_type": cfg.MODEL.RPN.BBOX_REG_LOSS_TYPE,
-            "smooth_l1_beta": cfg.MODEL.RPN.SMOOTH_L1_BETA,
+            "anchor_boundary_thresh": cfg.MODEL.RPN.BOUNDARY_THRESH, # -1
+            "box2box_transform": Box2BoxTransform(weights=cfg.MODEL.RPN.BBOX_REG_WEIGHTS), 
+            "box_reg_loss_type": cfg.MODEL.RPN.BBOX_REG_LOSS_TYPE, # smooth_11
+            "smooth_l1_beta": cfg.MODEL.RPN.SMOOTH_L1_BETA, # 0.0
         }
 
-        ret["pre_nms_topk"] = (cfg.MODEL.RPN.PRE_NMS_TOPK_TRAIN, cfg.MODEL.RPN.PRE_NMS_TOPK_TEST)
-        ret["post_nms_topk"] = (cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN, cfg.MODEL.RPN.POST_NMS_TOPK_TEST)
+        ret["pre_nms_topk"] = (cfg.MODEL.RPN.PRE_NMS_TOPK_TRAIN, cfg.MODEL.RPN.PRE_NMS_TOPK_TEST) # (2000, 1000)
+        ret["post_nms_topk"] = (cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN, cfg.MODEL.RPN.POST_NMS_TOPK_TEST) # (2000, 1000)
 
-        ret["anchor_generator"] = build_anchor_generator(cfg, [input_shape[f] for f in in_features])
+        ret["anchor_generator"] = build_anchor_generator(cfg, [input_shape[f] for f in in_features]) # 
         ret["anchor_matcher"] = Matcher(
             cfg.MODEL.RPN.IOU_THRESHOLDS, cfg.MODEL.RPN.IOU_LABELS, allow_low_quality_matches=True
         )
@@ -499,7 +509,7 @@ class RPN(nn.Module):
     def forward(
         self,
         images: ImageList,
-        features: Dict[str, torch.Tensor],
+        features: Dict[str, torch.Tensor], # BACKBONE传递过来的特征图
         gt_instances: Optional[List[Instances]] = None,
     ):
         """
@@ -609,7 +619,7 @@ class RPN(nn.Module):
             B = anchors_i.tensor.size(1)
             
             pred_anchor_deltas_i = pred_anchor_deltas_i.reshape(-1, B)
-            
+ 
             # Expand anchors to shape (N*Hi*Wi*A, B)
             anchors_i = anchors_i.tensor.unsqueeze(0).expand(N, -1, -1).reshape(-1, B)
             
