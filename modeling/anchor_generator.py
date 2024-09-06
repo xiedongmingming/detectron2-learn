@@ -70,15 +70,22 @@ def _broadcast_params(params, num_features, name):
     assert isinstance(
         params, collections.abc.Sequence
     ), f"{name} in anchor generator has to be a list! Got {params}."
+
     assert len(params), f"{name} in anchor generator cannot be empty!"
+
     if not isinstance(params[0], collections.abc.Sequence):  # params is list[float]
+
         return [params] * num_features
+
     if len(params) == 1:
+
         return list(params) * num_features
+
     assert len(params) == num_features, (
         f"Got {name} of length {len(params)} in anchor generator, "
         f"but the number of input features is {num_features}!"
     )
+    
     return params
 
 
@@ -123,7 +130,7 @@ class DefaultAnchorGenerator(nn.Module):
         
         aspect_ratios = _broadcast_params(aspect_ratios, self.num_features, "aspect_ratios")
         
-        self.cell_anchors = self._calculate_anchors(sizes, aspect_ratios)
+        self.cell_anchors = self._calculate_anchors(sizes, aspect_ratios) # BufferList()
 
         self.offset = offset
         
@@ -249,7 +256,13 @@ class DefaultAnchorGenerator(nn.Module):
                 where Hi, Wi are resolution of the feature map divided by anchor stride.
         """
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
-        
+        # [
+        #     {Tensor: (256, 184)},
+        #     {Tensor: (128, 92)},
+        #     {Tensor: (64, 46)},
+        #     {Tensor: (32, 23)},
+        #     {Tensor: (16, 12)}
+        # ]
         anchors_over_all_feature_maps = self._grid_anchors(grid_sizes)  # pyre-ignore
         
         return [Boxes(x) for x in anchors_over_all_feature_maps]

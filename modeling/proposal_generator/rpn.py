@@ -271,11 +271,11 @@ class RPN(nn.Module):
         """
         super().__init__()
         
-        self.in_features = in_features
+        self.in_features = in_features  # ['p2', 'p3', 'p4', 'p5', 'p6']
         
         self.rpn_head = head
         
-        self.anchor_generator = anchor_generator
+        self.anchor_generator = anchor_generator  # DefaultAnchorGenerator
 
         self.anchor_matcher = anchor_matcher
 
@@ -527,9 +527,22 @@ class RPN(nn.Module):
             loss: dict[Tensor] or None
         """
         features = [features[f] for f in self.in_features]
+        # [
+        #     {Tensor: (4, 256, 256, 184)},
+        #     {Tensor: (4, 256, 128, 92)},
+        #     {Tensor: (4, 256, 64, 46)},
+        #     {Tensor: (4, 256, 32, 23)},
+        #     {Tensor: (4, 256, 16, 12)},
+        # ]
         
         anchors = self.anchor_generator(features)
-
+        # [
+        #     {Boxes: Tensor{141312, 4}},
+        #     {Boxes: Tensor{34328, 4}},
+        #     {Boxes: Tensor{8832, 4}},
+        #     {Boxes: Tensor{2208, 4}},
+        #     {Boxes: Tensor{576, 4}}
+        # ]
         pred_objectness_logits, pred_anchor_deltas = self.rpn_head(features)
         
         # Transpose the Hi*Wi*A dimension to the middle:
