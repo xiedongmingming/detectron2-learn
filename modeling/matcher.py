@@ -22,7 +22,7 @@ class Matcher:
     ground-truth element m in [0, M) that matches to prediction n in [0, N).
     (b) a vector of length N containing the labels for each prediction.
     """
-
+    # Matcher对IoU矩阵进行检查，所有的锚都被标记为前景、背景或忽略。如图7所示，如果IoU大于预先定义的阈值（通常为0.7），则锚被分配到GT框之一，并标记为前景（'1'）。如果IoU小于另一个阈值(通常为0.3)，则将锚标记为背景('0')，否则忽略('-1')。
     def __init__(
         self, thresholds: List[float], labels: List[int], allow_low_quality_matches: bool = False
     ):

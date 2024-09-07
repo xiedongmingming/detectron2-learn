@@ -49,23 +49,29 @@ def assign_boxes_to_levels(
             `self.min_level + i`).
     """
     box_sizes = torch.sqrt(cat([boxes.area() for boxes in box_lists]))
+    
     # Eqn.(1) in FPN paper
     level_assignments = torch.floor(
         canonical_level + torch.log2(box_sizes / canonical_box_size + 1e-8)
     )
+    
     # clamp level to (min, max), in case the box size is too large or too small
     # for the available feature maps
     level_assignments = torch.clamp(level_assignments, min=min_level, max=max_level)
+    
     return level_assignments.to(torch.int64) - min_level
 
 
 # script the module to avoid hardcoded device type
 @torch.jit.script_if_tracing
 def _convert_boxes_to_pooler_format(boxes: torch.Tensor, sizes: torch.Tensor) -> torch.Tensor:
+    
     sizes = sizes.to(device=boxes.device)
+    
     indices = torch.repeat_interleave(
         torch.arange(len(sizes), dtype=boxes.dtype, device=boxes.device), sizes
     )
+    
     return cat([indices[:, None], boxes], dim=1)
 
 
@@ -93,8 +99,10 @@ def convert_boxes_to_pooler_format(box_lists: List[Boxes]):
             rotated box (x_ctr, y_ctr, width, height, angle_degrees) comes from.
     """
     boxes = torch.cat([x.tensor for x in box_lists], dim=0)
+    
     # __len__ returns Tensor in tracing.
     sizes = shapes_to_tensor([x.__len__() for x in box_lists])
+    
     return _convert_boxes_to_pooler_format(boxes, sizes)
 
 
@@ -106,8 +114,11 @@ def _create_zeros(
     width: int,
     like_tensor: torch.Tensor,
 ) -> torch.Tensor:
+    
     batches = batch_target.shape[0] if batch_target is not None else 0
+    
     sizes = (batches, channels, height, width)
+    
     return torch.zeros(sizes, dtype=like_tensor.dtype, device=like_tensor.device)
 
 
@@ -155,52 +166,71 @@ class ROIPooler(nn.Module):
         super().__init__()
 
         if isinstance(output_size, int):
+            
             output_size = (output_size, output_size)
+            
         assert len(output_size) == 2
         assert isinstance(output_size[0], int) and isinstance(output_size[1], int)
+        
         self.output_size = output_size
 
         if pooler_type == "ROIAlign":
+            
             self.level_poolers = nn.ModuleList(
                 ROIAlign(
                     output_size, spatial_scale=scale, sampling_ratio=sampling_ratio, aligned=False
                 )
                 for scale in scales
             )
+            
         elif pooler_type == "ROIAlignV2":
+            
             self.level_poolers = nn.ModuleList(
                 ROIAlign(
                     output_size, spatial_scale=scale, sampling_ratio=sampling_ratio, aligned=True
                 )
                 for scale in scales
             )
+            
         elif pooler_type == "ROIPool":
+            
             self.level_poolers = nn.ModuleList(
                 RoIPool(output_size, spatial_scale=scale) for scale in scales
             )
+            
         elif pooler_type == "ROIAlignRotated":
+            
             self.level_poolers = nn.ModuleList(
                 ROIAlignRotated(output_size, spatial_scale=scale, sampling_ratio=sampling_ratio)
                 for scale in scales
             )
+            
         else:
+            
             raise ValueError("Unknown pooler type: {}".format(pooler_type))
 
         # Map scale (defined as 1 / stride) to its feature map level under the
         # assumption that stride is a power of 2.
         min_level = -(math.log2(scales[0]))
         max_level = -(math.log2(scales[-1]))
+        
         assert math.isclose(min_level, int(min_level)) and math.isclose(
             max_level, int(max_level)
         ), "Featuremap stride is not power of 2!"
+        
         self.min_level = int(min_level)
         self.max_level = int(max_level)
+        
         assert (
             len(scales) == self.max_level - self.min_level + 1
         ), "[ROIPooler] Sizes of input featuremaps do not form a pyramid!"
+        
         assert 0 <= self.min_level and self.min_level <= self.max_level
+        
         self.canonical_level = canonical_level
+        
         assert canonical_box_size > 0
+        
         self.canonical_box_size = canonical_box_size
 
     def forward(self, x: List[torch.Tensor], box_lists: List[Boxes]):
@@ -221,28 +251,34 @@ class ROIPooler(nn.Module):
         num_level_assignments = len(self.level_poolers)
 
         if not is_fx_tracing():
+            
             torch._assert(
                 isinstance(x, list) and isinstance(box_lists, list),
                 "Arguments to pooler must be lists",
             )
+            
         assert_fx_safe(
             len(x) == num_level_assignments,
             "unequal value, num_level_assignments={}, but x is list of {} Tensors".format(
                 num_level_assignments, len(x)
             ),
         )
+        
         assert_fx_safe(
             len(box_lists) == x[0].size(0),
             "unequal value, x[0] batch dim 0 is {}, but box_list has length {}".format(
                 x[0].size(0), len(box_lists)
             ),
         )
+        
         if len(box_lists) == 0:
+            
             return _create_zeros(None, x[0].shape[1], *self.output_size, x[0])
 
         pooler_fmt_boxes = convert_boxes_to_pooler_format(box_lists)
 
         if num_level_assignments == 1:
+            
             return self.level_poolers[0](x[0], pooler_fmt_boxes)
 
         level_assignments = assign_boxes_to_levels(
@@ -250,13 +286,17 @@ class ROIPooler(nn.Module):
         )
 
         num_channels = x[0].shape[1]
+        
         output_size = self.output_size[0]
 
         output = _create_zeros(pooler_fmt_boxes, num_channels, output_size, output_size, x[0])
 
         for level, pooler in enumerate(self.level_poolers):
+            
             inds = nonzero_tuple(level_assignments == level)[0]
+            
             pooler_fmt_boxes_level = pooler_fmt_boxes[inds]
+            
             # Use index_put_ instead of advance indexing, to avoid pytorch/issues/49852
             output.index_put_((inds,), pooler(x[level], pooler_fmt_boxes_level))
 

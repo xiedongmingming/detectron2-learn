@@ -39,9 +39,11 @@ def subsample_labels(
     negative = nonzero_tuple(labels == bg_label)[0]
 
     num_pos = int(num_samples * positive_fraction)
+    
     # protect against not enough positive examples
     num_pos = min(positive.numel(), num_pos)
     num_neg = num_samples - num_pos
+    
     # protect against not enough negative examples
     num_neg = min(negative.numel(), num_neg)
 
@@ -51,4 +53,5 @@ def subsample_labels(
 
     pos_idx = positive[perm1]
     neg_idx = negative[perm2]
+    
     return pos_idx, neg_idx

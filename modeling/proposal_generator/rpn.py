@@ -72,12 +72,17 @@ class StandardRPNHead(nn.Module):
     Standard RPN classification and regression heads described in :paper:`Faster R-CNN`.
     Uses a 3x3 conv to produce a shared hidden state from which one 1x1 conv predicts
     objectness logits for each anchor and a second 1x1 conv predicts bounding-box deltas
-    specifying how to deform each anchor into an object proposal.
+    specifying how to deform each anchor into an object proposal.  使用3x3 CONV生成共享隐藏状态，由1x1 CONV进行预测每个锚的对象逻辑，第二个1x1转换预测边界框增量指定如何将每个锚变形为对象建议。
     """
 
     @configurable
     def __init__(
-        self, *, in_channels: int, num_anchors: int, box_dim: int = 4, conv_dims: List[int] = (-1,)
+            self,
+            *,
+            in_channels: int,
+            num_anchors: int,
+            box_dim: int = 4,
+            conv_dims: List[int] = (-1,)
     ):
         """
         NOTE: this interface is experimental.
@@ -97,17 +102,17 @@ class StandardRPNHead(nn.Module):
         """
         super().__init__()
         
-        cur_channels = in_channels
+        cur_channels = in_channels  # 256
         
         # Keeping the old variable names and structure for backwards compatiblity. Otherwise the old checkpoints will fail to load.
         if len(conv_dims) == 1:
             
-            out_channels = cur_channels if conv_dims[0] == -1 else conv_dims[0]
+            out_channels = cur_channels if conv_dims[0] == -1 else conv_dims[0]  # 256
             
             # 3x3 conv for the hidden representation
-            self.conv = self._get_rpn_conv(cur_channels, out_channels)
+            self.conv = self._get_rpn_conv(cur_channels, out_channels)  # 3x3
             
-            cur_channels = out_channels
+            cur_channels = out_channels  # 256
             
         else:
             
@@ -130,13 +135,13 @@ class StandardRPNHead(nn.Module):
                 cur_channels = out_channels
                 
         # 1x1 conv for predicting objectness logits
-        self.objectness_logits = nn.Conv2d(cur_channels, num_anchors, kernel_size=1, stride=1)
+        self.objectness_logits = nn.Conv2d(cur_channels, num_anchors, kernel_size=1, stride=1)  # num_anchors:3
         
         # 1x1 conv for predicting box2box transform deltas
-        self.anchor_deltas = nn.Conv2d(cur_channels, num_anchors * box_dim, kernel_size=1, stride=1)
+        self.anchor_deltas = nn.Conv2d(cur_channels, num_anchors * box_dim, kernel_size=1, stride=1)  # 3x4
 
         # Keeping the order of weights initialization same for backwards compatiblility.
-        for layer in self.modules():
+        for layer in self.modules():  # 上面涉及的多有MODULE
             
             if isinstance(layer, nn.Conv2d):
                 
@@ -158,7 +163,7 @@ class StandardRPNHead(nn.Module):
     def from_config(cls, cfg, input_shape):
         
         # Standard RPN is shared across levels:
-        in_channels = [s.channels for s in input_shape]
+        in_channels = [s.channels for s in input_shape]  # {list: 5(ShapeSpec)} [256, 256, 256, 256, 256]
         
         assert len(set(in_channels)) == 1, "Each level must have the same channel!"
         
@@ -166,11 +171,11 @@ class StandardRPNHead(nn.Module):
 
         # RPNHead should take the same input as anchor generator
         # NOTE: it assumes that creating an anchor generator does not have unwanted side effect.
-        anchor_generator = build_anchor_generator(cfg, input_shape)
+        anchor_generator = build_anchor_generator(cfg, input_shape)  # DefaultAnchorGenerator((cell_anchors): BufferList())
         
-        num_anchors = anchor_generator.num_anchors
+        num_anchors = anchor_generator.num_anchors  # [3, 3, 3, 3, 3]
         
-        box_dim = anchor_generator.box_dim
+        box_dim = anchor_generator.box_dim  # 4
         
         assert (
             len(set(num_anchors)) == 1
@@ -202,11 +207,11 @@ class StandardRPNHead(nn.Module):
         
         for x in features:
             
-            t = self.conv(x)
+            t = self.conv(x) # 形状未发生变化
             
-            pred_objectness_logits.append(self.objectness_logits(t))
+            pred_objectness_logits.append(self.objectness_logits(t)) # 通道数变为了3（每一个点的三个ANCHOR的类别得分）
             
-            pred_anchor_deltas.append(self.anchor_deltas(t))
+            pred_anchor_deltas.append(self.anchor_deltas(t)) # 通道数变为了12（每一个点的三个ANCHOR坐标位置）
             
         return pred_objectness_logits, pred_anchor_deltas
 
@@ -273,38 +278,38 @@ class RPN(nn.Module):
         
         self.in_features = in_features  # ['p2', 'p3', 'p4', 'p5', 'p6']
         
-        self.rpn_head = head
+        self.rpn_head = head  # StandardRPNHead
         
         self.anchor_generator = anchor_generator  # DefaultAnchorGenerator
 
-        self.anchor_matcher = anchor_matcher
+        self.anchor_matcher = anchor_matcher  # detectron2.modeling.matcher.Matecher
 
-        self.box2box_transform = box2box_transform
+        self.box2box_transform = box2box_transform  # detectron2.modeling.box_regression.Box2BoxTransform
 
-        self.batch_size_per_image = batch_size_per_image
+        self.batch_size_per_image = batch_size_per_image # 256
 
-        self.positive_fraction = positive_fraction
+        self.positive_fraction = positive_fraction  # 0.5
         
         # Map from self.training state to train/test settings
-        self.pre_nms_topk = {True: pre_nms_topk[0], False: pre_nms_topk[1]}
+        self.pre_nms_topk = {True: pre_nms_topk[0], False: pre_nms_topk[1]}  # {False: 1000, True: 2000}
 
-        self.post_nms_topk = {True: post_nms_topk[0], False: post_nms_topk[1]}
+        self.post_nms_topk = {True: post_nms_topk[0], False: post_nms_topk[1]}  # {False: 1000, True: 2000}
 
-        self.nms_thresh = nms_thresh
+        self.nms_thresh = nms_thresh  # 0.7
 
-        self.min_box_size = float(min_box_size)
+        self.min_box_size = float(min_box_size)  # 0.0
 
-        self.anchor_boundary_thresh = anchor_boundary_thresh
+        self.anchor_boundary_thresh = anchor_boundary_thresh  # -1
         
         if isinstance(loss_weight, float):
             
             loss_weight = {"loss_rpn_cls": loss_weight, "loss_rpn_loc": loss_weight}
             
-        self.loss_weight = loss_weight
+        self.loss_weight = loss_weight  # {'loss_rpn_cls': 1.0, 'loss_rpn_loc': 1.0}
 
-        self.box_reg_loss_type = box_reg_loss_type
+        self.box_reg_loss_type = box_reg_loss_type  # 'smooth_l1'
 
-        self.smooth_l1_beta = smooth_l1_beta
+        self.smooth_l1_beta = smooth_l1_beta  # 0.0
 
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
@@ -330,7 +335,8 @@ class RPN(nn.Module):
         ret["pre_nms_topk"] = (cfg.MODEL.RPN.PRE_NMS_TOPK_TRAIN, cfg.MODEL.RPN.PRE_NMS_TOPK_TEST) # (2000, 1000)
         ret["post_nms_topk"] = (cfg.MODEL.RPN.POST_NMS_TOPK_TRAIN, cfg.MODEL.RPN.POST_NMS_TOPK_TEST) # (2000, 1000)
 
-        ret["anchor_generator"] = build_anchor_generator(cfg, [input_shape[f] for f in in_features]) # 
+        ret["anchor_generator"] = build_anchor_generator(cfg, [input_shape[f] for f in in_features]) # 这个GENERATOR在StandardRPNHead中也有
+
         ret["anchor_matcher"] = Matcher(
             cfg.MODEL.RPN.IOU_THRESHOLDS, cfg.MODEL.RPN.IOU_LABELS, allow_low_quality_matches=True
         )
@@ -380,11 +386,11 @@ class RPN(nn.Module):
                 i-th element is a Rx4 tensor. The values are the matched gt boxes for each
                 anchor. Values are undefined for those anchors not labeled as 1.
         """
-        anchors = Boxes.cat(anchors)
+        anchors = Boxes.cat(anchors)  # {Boxes:188256}
 
-        gt_boxes = [x.gt_boxes for x in gt_instances]
+        gt_boxes = [x.gt_boxes for x in gt_instances]  # instances->boxes
         
-        image_sizes = [x.image_size for x in gt_instances]
+        image_sizes = [x.image_size for x in gt_instances]  # [(678, 480), (885, 608), (769, 544), (999, 736)]
         
         del gt_instances
 
@@ -428,7 +434,7 @@ class RPN(nn.Module):
             
             matched_gt_boxes.append(matched_gt_boxes_i)
             
-        return gt_labels, matched_gt_boxes
+        return gt_labels, matched_gt_boxes  # {list:4}{Tensor:(188256,)}  {list:4}{Tensor:(188256,4)}
 
     @torch.jit.unused
     def losses(
@@ -527,46 +533,53 @@ class RPN(nn.Module):
             loss: dict[Tensor] or None
         """
         features = [features[f] for f in self.in_features]
-        # [
+        # features：[
         #     {Tensor: (4, 256, 256, 184)},
         #     {Tensor: (4, 256, 128, 92)},
         #     {Tensor: (4, 256, 64, 46)},
         #     {Tensor: (4, 256, 32, 23)},
         #     {Tensor: (4, 256, 16, 12)},
         # ]
-        
-        anchors = self.anchor_generator(features)
-        # [
-        #     {Boxes: Tensor{141312, 4}},
-        #     {Boxes: Tensor{34328, 4}},
-        #     {Boxes: Tensor{8832, 4}},
-        #     {Boxes: Tensor{2208, 4}},
-        #     {Boxes: Tensor{576, 4}}
-        # ]
-        pred_objectness_logits, pred_anchor_deltas = self.rpn_head(features)
-        
-        # Transpose the Hi*Wi*A dimension to the middle:
-        pred_objectness_logits = [
-            # (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
-            score.permute(0, 2, 3, 1).flatten(1)
-            for score in pred_objectness_logits
-        ]
-        
-        pred_anchor_deltas = [
-            # (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B) -> (N, Hi*Wi*A, B)
-            x.view(x.shape[0], -1, self.anchor_generator.box_dim, x.shape[-2], x.shape[-1])
-            .permute(0, 3, 4, 1, 2)
-            .flatten(1, -2)
-            for x in pred_anchor_deltas
-        ]
 
+        anchors = self.anchor_generator(features)  # DefaultAnchorGenerator
+        # [
+        #     {Boxes: Tensor{141312, 4}},   256x184x3
+        #     {Boxes: Tensor{34328, 4}},    128x92x3
+        #     {Boxes: Tensor{8832, 4}},     64x46x3
+        #     {Boxes: Tensor{2208, 4}},     32x23x3
+        #     {Boxes: Tensor{576, 4}}       16x12x3
+        # ]
+
+        pred_objectness_logits, pred_anchor_deltas = self.rpn_head(features)
+
+        # Transpose the Hi*Wi*A dimension to the middle:
+        pred_objectness_logits = [ # (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
+            score.permute(0, 2, 3, 1).flatten(1) for score in pred_objectness_logits
+        ]
+        # [
+        #     {Tensor: (4, 141312)},
+        #     {Tensor: (4, 35328)},
+        #     {Tensor: (4, 8832)},
+        #     {Tensor: (4, 2208)},
+        #     {Tensor: (4, 576)},
+        # ]
+        pred_anchor_deltas = [ # (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B) -> (N, Hi*Wi*A, B)
+            x.view(x.shape[0], -1, self.anchor_generator.box_dim, x.shape[-2], x.shape[-1]).permute(0, 3, 4, 1, 2).flatten(1, -2) for x in pred_anchor_deltas
+        ]
+        # [
+        #     {Tensor: (4, 141312, 4)},
+        #     {Tensor: (4, 35328, 4)},
+        #     {Tensor: (4, 8832, 4)},
+        #     {Tensor: (4, 2208, 4)},
+        #     {Tensor: (4, 576, 4)},
+        # ]
         if self.training:
-            
+            # {list:4} {Intances:8},{Intances:8},{Intances:2},{Intances:16}
             assert gt_instances is not None, "RPN requires gt_instances in training!"
             
             gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, gt_instances)
             
-            losses = self.losses(
+            losses = self.losses(  # {'loss_rpn_cls': {Tensor:()}, 'loss_rpn_loc': Tensor:()}
                 anchors, pred_objectness_logits, gt_labels, pred_anchor_deltas, gt_boxes
             )
             
@@ -574,7 +587,7 @@ class RPN(nn.Module):
             
             losses = {}
             
-        proposals = self.predict_proposals(
+        proposals = self.predict_proposals(  # {list:4}  {Instances:2000}
             anchors, pred_objectness_logits, pred_anchor_deltas, images.image_sizes
         )
         

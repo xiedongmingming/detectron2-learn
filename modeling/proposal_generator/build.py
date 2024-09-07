@@ -22,5 +22,5 @@ def build_proposal_generator(cfg, input_shape):
     if name == "PrecomputedProposals":
         #
         return None
-
+    # input_shape：{"p2":ShapeSpec, "p3":ShapeSpec, "p4":ShapeSpec, "p5":ShapeSpec, "p6":ShapeSpec}
     return PROPOSAL_GENERATOR_REGISTRY.get(name)(cfg, input_shape)

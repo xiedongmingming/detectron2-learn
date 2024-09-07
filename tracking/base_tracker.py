@@ -19,6 +19,7 @@ class BaseTracker:
 
     @configurable
     def __init__(self, **kwargs):
+
         self._prev_instances = None  # (D2)instances for previous frame
         self._matched_idx = set()  # indices in prev_instances found matching
         self._matched_ID = set()  # idendities in prev_instances found matching
@@ -27,6 +28,7 @@ class BaseTracker:
 
     @classmethod
     def from_config(cls, cfg: CfgNode_):
+
         raise NotImplementedError("Calling BaseTracker::from_config")
 
     def update(self, predictions: Instances) -> Instances:
@@ -60,5 +62,7 @@ def build_tracker_head(cfg: CfgNode_) -> BaseTracker:
         tracker object
     """
     name = cfg.TRACKER_HEADS.TRACKER_NAME
+
     tracker_class = TRACKER_HEADS_REGISTRY.get(name)
+
     return tracker_class(cfg)

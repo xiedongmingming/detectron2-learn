@@ -1,8 +1,12 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import math
+
 from typing import List, Tuple, Union
+
 import torch
+
 from fvcore.nn import giou_loss, smooth_l1_loss
+
 from torch.nn import functional as F
 
 from detectron2.layers import cat, ciou_loss, diou_loss
@@ -38,6 +42,7 @@ class Box2BoxTransform:
                 factors (dw and dh) are clamped such that they are <= scale_clamp.
         """
         self.weights = weights
+
         self.scale_clamp = scale_clamp
 
     def get_deltas(self, src_boxes, target_boxes):
@@ -57,22 +62,27 @@ class Box2BoxTransform:
 
         src_widths = src_boxes[:, 2] - src_boxes[:, 0]
         src_heights = src_boxes[:, 3] - src_boxes[:, 1]
+
         src_ctr_x = src_boxes[:, 0] + 0.5 * src_widths
         src_ctr_y = src_boxes[:, 1] + 0.5 * src_heights
 
         target_widths = target_boxes[:, 2] - target_boxes[:, 0]
         target_heights = target_boxes[:, 3] - target_boxes[:, 1]
+
         target_ctr_x = target_boxes[:, 0] + 0.5 * target_widths
         target_ctr_y = target_boxes[:, 1] + 0.5 * target_heights
 
         wx, wy, ww, wh = self.weights
+
         dx = wx * (target_ctr_x - src_ctr_x) / src_widths
         dy = wy * (target_ctr_y - src_ctr_y) / src_heights
         dw = ww * torch.log(target_widths / src_widths)
         dh = wh * torch.log(target_heights / src_heights)
 
         deltas = torch.stack((dx, dy, dw, dh), dim=1)
+
         assert (src_widths > 0).all().item(), "Input boxes to Box2BoxTransform are not valid!"
+
         return deltas
 
     def apply_deltas(self, deltas, boxes):
@@ -86,14 +96,17 @@ class Box2BoxTransform:
             boxes (Tensor): boxes to transform, of shape (N, 4)
         """
         deltas = deltas.float()  # ensure fp32 for decoding precision
+
         boxes = boxes.to(deltas.dtype)
 
         widths = boxes[:, 2] - boxes[:, 0]
         heights = boxes[:, 3] - boxes[:, 1]
+
         ctr_x = boxes[:, 0] + 0.5 * widths
         ctr_y = boxes[:, 1] + 0.5 * heights
 
         wx, wy, ww, wh = self.weights
+
         dx = deltas[:, 0::4] / wx
         dy = deltas[:, 1::4] / wy
         dw = deltas[:, 2::4] / ww
@@ -105,6 +118,7 @@ class Box2BoxTransform:
 
         pred_ctr_x = dx * widths[:, None] + ctr_x[:, None]
         pred_ctr_y = dy * heights[:, None] + ctr_y[:, None]
+
         pred_w = torch.exp(dw) * widths[:, None]
         pred_h = torch.exp(dh) * heights[:, None]
 
@@ -112,7 +126,9 @@ class Box2BoxTransform:
         y1 = pred_ctr_y - 0.5 * pred_h
         x2 = pred_ctr_x + 0.5 * pred_w
         y2 = pred_ctr_y + 0.5 * pred_h
+
         pred_boxes = torch.stack((x1, y1, x2, y2), dim=-1)
+
         return pred_boxes.reshape(deltas.shape)
 
 
@@ -140,6 +156,7 @@ class Box2BoxTransformRotated:
                 factors (dw and dh) are clamped such that they are <= scale_clamp.
         """
         self.weights = weights
+
         self.scale_clamp = scale_clamp
 
     def get_deltas(self, src_boxes, target_boxes):
@@ -164,20 +181,26 @@ class Box2BoxTransformRotated:
         )
 
         wx, wy, ww, wh, wa = self.weights
+
         dx = wx * (target_ctr_x - src_ctr_x) / src_widths
         dy = wy * (target_ctr_y - src_ctr_y) / src_heights
+
         dw = ww * torch.log(target_widths / src_widths)
         dh = wh * torch.log(target_heights / src_heights)
         # Angles of deltas are in radians while angles of boxes are in degrees.
         # the conversion to radians serve as a way to normalize the values
         da = target_angles - src_angles
+
         da = (da + 180.0) % 360.0 - 180.0  # make it in [-180, 180)
+
         da *= wa * math.pi / 180.0
 
         deltas = torch.stack((dx, dy, dw, dh, da), dim=1)
+
         assert (
             (src_widths > 0).all().item()
         ), "Input boxes to Box2BoxTransformRotated are not valid!"
+
         return deltas
 
     def apply_deltas(self, deltas, boxes):
@@ -212,6 +235,7 @@ class Box2BoxTransformRotated:
         dh = torch.clamp(dh, max=self.scale_clamp)
 
         pred_boxes = torch.zeros_like(deltas)
+
         pred_boxes[:, 0::5] = dx * widths + ctr_x  # x_ctr
         pred_boxes[:, 1::5] = dy * heights + ctr_y  # y_ctr
         pred_boxes[:, 2::5] = torch.exp(dw) * widths  # width
@@ -220,6 +244,7 @@ class Box2BoxTransformRotated:
         # Following original RRPN implementation,
         # angles of deltas are in radians while angles of boxes are in degrees.
         pred_angle = da * 180.0 / math.pi + angles
+
         pred_angle = (pred_angle + 180.0) % 360.0 - 180.0  # make it in [-180, 180)
 
         pred_boxes[:, 4::5] = pred_angle
@@ -260,14 +285,19 @@ class Box2BoxTransformLinear:
 
         target_l = src_ctr_x - target_boxes[:, 0]
         target_t = src_ctr_y - target_boxes[:, 1]
+
         target_r = target_boxes[:, 2] - src_ctr_x
         target_b = target_boxes[:, 3] - src_ctr_y
 
         deltas = torch.stack((target_l, target_t, target_r, target_b), dim=1)
+
         if self.normalize_by_size:
+
             stride_w = src_boxes[:, 2] - src_boxes[:, 0]
             stride_h = src_boxes[:, 3] - src_boxes[:, 1]
+
             strides = torch.stack([stride_w, stride_h, stride_w, stride_h], axis=1)
+
             deltas = deltas / strides
 
         return deltas
@@ -284,14 +314,19 @@ class Box2BoxTransformLinear:
         """
         # Ensure the output is a valid box. See Sec 2.1 of https://arxiv.org/abs/2006.09214
         deltas = F.relu(deltas)
+
         boxes = boxes.to(deltas.dtype)
 
         ctr_x = 0.5 * (boxes[:, 0] + boxes[:, 2])
         ctr_y = 0.5 * (boxes[:, 1] + boxes[:, 3])
+
         if self.normalize_by_size:
+
             stride_w = boxes[:, 2] - boxes[:, 0]
             stride_h = boxes[:, 3] - boxes[:, 1]
+
             strides = torch.stack([stride_w, stride_h, stride_w, stride_h], axis=1)
+
             deltas = deltas * strides
 
         l = deltas[:, 0::4]
@@ -300,10 +335,12 @@ class Box2BoxTransformLinear:
         b = deltas[:, 3::4]
 
         pred_boxes = torch.zeros_like(deltas)
+
         pred_boxes[:, 0::4] = ctr_x[:, None] - l  # x1
         pred_boxes[:, 1::4] = ctr_y[:, None] - t  # y1
         pred_boxes[:, 2::4] = ctr_x[:, None] + r  # x2
         pred_boxes[:, 3::4] = ctr_y[:, None] + b  # y2
+
         return pred_boxes
 
 
@@ -334,36 +371,51 @@ def _dense_box_regression_loss(
         anchors = type(anchors[0]).cat(anchors).tensor  # (R, 4)
     else:
         anchors = cat(anchors)
+
     if box_reg_loss_type == "smooth_l1":
+
         gt_anchor_deltas = [box2box_transform.get_deltas(anchors, k) for k in gt_boxes]
         gt_anchor_deltas = torch.stack(gt_anchor_deltas)  # (N, R, 4)
+
         loss_box_reg = smooth_l1_loss(
             cat(pred_anchor_deltas, dim=1)[fg_mask],
             gt_anchor_deltas[fg_mask],
             beta=smooth_l1_beta,
             reduction="sum",
         )
+
     elif box_reg_loss_type == "giou":
+
         pred_boxes = [
             box2box_transform.apply_deltas(k, anchors) for k in cat(pred_anchor_deltas, dim=1)
         ]
+
         loss_box_reg = giou_loss(
             torch.stack(pred_boxes)[fg_mask], torch.stack(gt_boxes)[fg_mask], reduction="sum"
         )
+
     elif box_reg_loss_type == "diou":
+
         pred_boxes = [
             box2box_transform.apply_deltas(k, anchors) for k in cat(pred_anchor_deltas, dim=1)
         ]
+
         loss_box_reg = diou_loss(
             torch.stack(pred_boxes)[fg_mask], torch.stack(gt_boxes)[fg_mask], reduction="sum"
         )
+
     elif box_reg_loss_type == "ciou":
+
         pred_boxes = [
             box2box_transform.apply_deltas(k, anchors) for k in cat(pred_anchor_deltas, dim=1)
         ]
+        
         loss_box_reg = ciou_loss(
             torch.stack(pred_boxes)[fg_mask], torch.stack(gt_boxes)[fg_mask], reduction="sum"
         )
+
     else:
+
         raise ValueError(f"Invalid dense box regression loss type '{box_reg_loss_type}'")
+
     return loss_box_reg

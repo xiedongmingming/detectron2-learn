@@ -1,8 +1,11 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import collections
 import math
+
 from typing import List
+
 import torch
+
 from torch import nn
 
 from detectron2.config import configurable
@@ -24,34 +27,45 @@ class BufferList(nn.Module):
     """
 
     def __init__(self, buffers):
+        
         super().__init__()
+        
         for i, buffer in enumerate(buffers):
+            #
             # Use non-persistent buffer so the values are not saved in checkpoint
+            #
             self.register_buffer(str(i), buffer, persistent=False)
 
     def __len__(self):
+        
         return len(self._buffers)
 
     def __iter__(self):
+        
         return iter(self._buffers.values())
 
 
 def _create_grid_offsets(
     size: List[int], stride: int, offset: float, target_device_tensor: torch.Tensor
 ):
-    grid_height, grid_width = size
+    #
+    # size：torch.Size([256, 184]) stride：4 base_anchors: {Tensor：(3, 4)}
+    #
+    grid_height, grid_width = size # 256, 184
+    
     shifts_x = move_device_like(
-        torch.arange(offset * stride, grid_width * stride, step=stride, dtype=torch.float32),
-        target_device_tensor,
+        torch.arange(offset * stride, grid_width * stride, step=stride, dtype=torch.float32), target_device_tensor,
     )
+    
     shifts_y = move_device_like(
-        torch.arange(offset * stride, grid_height * stride, step=stride, dtype=torch.float32),
-        target_device_tensor,
+        torch.arange(offset * stride, grid_height * stride, step=stride, dtype=torch.float32), target_device_tensor,
     )
 
     shift_y, shift_x = torch.meshgrid(shifts_y, shifts_x)
+    
     shift_x = shift_x.reshape(-1)
     shift_y = shift_y.reshape(-1)
+    
     return shift_x, shift_y
 
 
@@ -122,15 +136,15 @@ class DefaultAnchorGenerator(nn.Module):
         """
         super().__init__()
 
-        self.strides = strides
+        self.strides = strides  # [4, 8, 16, 32, 64]
+
+        self.num_features = len(self.strides)  # 5
         
-        self.num_features = len(self.strides)
+        sizes = _broadcast_params(sizes, self.num_features, "sizes")  # [[32], [64], [128], [256], [512]]
         
-        sizes = _broadcast_params(sizes, self.num_features, "sizes")
+        aspect_ratios = _broadcast_params(aspect_ratios, self.num_features, "aspect_ratios")  # [[0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0], [0.5, 1.0, 2.0]]
         
-        aspect_ratios = _broadcast_params(aspect_ratios, self.num_features, "aspect_ratios")
-        
-        self.cell_anchors = self._calculate_anchors(sizes, aspect_ratios) # BufferList()
+        self.cell_anchors = self._calculate_anchors(sizes, aspect_ratios) # BufferList() {list:5(Tensor:{3,4})}
 
         self.offset = offset
         
@@ -140,16 +154,16 @@ class DefaultAnchorGenerator(nn.Module):
     def from_config(cls, cfg, input_shape: List[ShapeSpec]):
         
         return {
-            "sizes": cfg.MODEL.ANCHOR_GENERATOR.SIZES,
-            "aspect_ratios": cfg.MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS,
-            "strides": [x.stride for x in input_shape],
-            "offset": cfg.MODEL.ANCHOR_GENERATOR.OFFSET,
+            "sizes": cfg.MODEL.ANCHOR_GENERATOR.SIZES,  # [[32, 64, 128, 256, 512]]
+            "aspect_ratios": cfg.MODEL.ANCHOR_GENERATOR.ASPECT_RATIOS,  # [[0.5, 1.0, 2.0]]
+            "strides": [x.stride for x in input_shape],  # [4, 8, 16, 32, 64]
+            "offset": cfg.MODEL.ANCHOR_GENERATOR.OFFSET,  # 0.0
         }
 
     def _calculate_anchors(self, sizes, aspect_ratios):
         
-        cell_anchors = [
-            self.generate_cell_anchors(s, a).float() for s, a in zip(sizes, aspect_ratios)
+        cell_anchors = [  # {list:5} {Tensor:(3,4)} -- 5个级别 3个比例 4个坐标
+            self.generate_cell_anchors(s, a).float() for s, a in zip(sizes, aspect_ratios)  # s,a:[32][0.5,1.0.2.0]
         ]
         
         return BufferList(cell_anchors)
@@ -164,7 +178,7 @@ class DefaultAnchorGenerator(nn.Module):
 
     @property
     @torch.jit.unused
-    def num_anchors(self):
+    def num_anchors(self):  # [3, 3, 3, 3, 3]
         """
         Returns:
             list[int]: Each int is the number of anchors at every pixel
@@ -177,7 +191,7 @@ class DefaultAnchorGenerator(nn.Module):
         """
         return [len(cell_anchors) for cell_anchors in self.cell_anchors]
 
-    def _grid_anchors(self, grid_sizes: List[List[int]]):
+    def _grid_anchors(self, grid_sizes: List[List[int]]):  # [torch.Size([256, 184]), torch.Size([128, 92]), torch.Size([64, 46]), torch.Size([32, 23]), torch.Size([16, 12])]
         """
         Returns:
             list[Tensor]: #featuremap tensors, each is (#locations x #cell_anchors) x 4
@@ -189,16 +203,18 @@ class DefaultAnchorGenerator(nn.Module):
         buffers: List[torch.Tensor] = [x[1] for x in self.cell_anchors.named_buffers()]
         
         for size, stride, base_anchors in zip(grid_sizes, self.strides, buffers):
+            #
+            # size：torch.Size([256, 184]) stride：4 base_anchors: {Tensor：(3, 4)}
+            #
+            shift_x, shift_y = _create_grid_offsets(size, stride, self.offset, base_anchors) # {Tensor：(47104,)} {Tensor：(47104,)}
             
-            shift_x, shift_y = _create_grid_offsets(size, stride, self.offset, base_anchors)
-            
-            shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1)
+            shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1)  # {Tensor：(47104, 4)}
 
             anchors.append((shifts.view(-1, 1, 4) + base_anchors.view(1, -1, 4)).reshape(-1, 4))
 
         return anchors
 
-    def generate_cell_anchors(self, sizes=(32, 64, 128, 256, 512), aspect_ratios=(0.5, 1, 2)):
+    def generate_cell_anchors(self, sizes=(32, 64, 128, 256, 512), aspect_ratios=(0.5, 1, 2)): # s,a:[32][0.5,1.0.2.0]
         """
         Generate a tensor storing canonical anchor boxes, which are all anchor
         boxes of different sizes and aspect_ratios centered at (0, 0).
@@ -257,14 +273,20 @@ class DefaultAnchorGenerator(nn.Module):
         """
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
         # [
-        #     {Tensor: (256, 184)},
-        #     {Tensor: (128, 92)},
-        #     {Tensor: (64, 46)},
-        #     {Tensor: (32, 23)},
-        #     {Tensor: (16, 12)}
+        #     {torch.Size(256, 184)},
+        #     {torch.Size(128, 92)},
+        #     {torch.Size(64, 46)},
+        #     {torch.Size(32, 23)},
+        #     {torch.Size(16, 12)}
         # ]
         anchors_over_all_feature_maps = self._grid_anchors(grid_sizes)  # pyre-ignore
-        
+        # [
+        #     {Tensor：(141312, 4)}, 256x184x3
+        #     {Tensor：(35328, 4)},  128x92x3
+        #     {Tensor：(8832, 4)},   64x46x3
+        #     {Tensor：(2208, 4)},   32x23x3
+        #     {Tensor：(576, 4)},    16x12x3
+        # ]
         return [Boxes(x) for x in anchors_over_all_feature_maps]
 
 

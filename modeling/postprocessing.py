@@ -32,9 +32,13 @@ def detector_postprocess(
         # division is performed when computing scale_x and scale_y.
         output_width_tmp = output_width.float()
         output_height_tmp = output_height.float()
+        
         new_size = torch.stack([output_height, output_width])
+        
     else:
+        
         new_size = (output_height, output_width)
+        
         output_width_tmp = output_width
         output_height_tmp = output_height
 
@@ -42,6 +46,7 @@ def detector_postprocess(
         output_width_tmp / results.image_size[1],
         output_height_tmp / results.image_size[0],
     )
+    
     results = Instances(new_size, **results.get_fields())
 
     if results.has("pred_boxes"):
@@ -50,6 +55,7 @@ def detector_postprocess(
         output_boxes = results.proposal_boxes
     else:
         output_boxes = None
+        
     assert output_boxes is not None, "Predictions must contain boxes!"
 
     output_boxes.scale(scale_x, scale_y)
@@ -58,16 +64,19 @@ def detector_postprocess(
     results = results[output_boxes.nonempty()]
 
     if results.has("pred_masks"):
+        
         if isinstance(results.pred_masks, ROIMasks):
             roi_masks = results.pred_masks
         else:
             # pred_masks is a tensor of shape (N, 1, M, M)
             roi_masks = ROIMasks(results.pred_masks[:, 0, :, :])
+            
         results.pred_masks = roi_masks.to_bitmasks(
             results.pred_boxes, output_height, output_width, mask_threshold
         ).tensor  # TODO return ROIMasks/BitMask object in the future
 
     if results.has("pred_keypoints"):
+        
         results.pred_keypoints[:, :, 0] *= scale_x
         results.pred_keypoints[:, :, 1] *= scale_y
 
@@ -94,7 +103,9 @@ def sem_seg_postprocess(result, img_size, output_height, output_width):
             (C, output_height, output_width) that contains per-pixel soft predictions.
     """
     result = result[:, : img_size[0], : img_size[1]].expand(1, -1, -1, -1)
+    
     result = F.interpolate(
         result, size=(output_height, output_width), mode="bilinear", align_corners=False
     )[0]
+    
     return result

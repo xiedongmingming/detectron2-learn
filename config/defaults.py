@@ -231,7 +231,7 @@ _C.MODEL.RPN.SMOOTH_L1_BETA = 0.0
 _C.MODEL.RPN.LOSS_WEIGHT = 1.0
 # Number of top scoring RPN proposals to keep before applying NMS
 # When FPN is used, this is *per FPN level* (not total)
-_C.MODEL.RPN.PRE_NMS_TOPK_TRAIN = 12000
+_C.MODEL.RPN.PRE_NMS_TOPK_TRAIN = 12000  # 每个FPN特征图选择12000个
 _C.MODEL.RPN.PRE_NMS_TOPK_TEST = 6000
 # Number of top scoring RPN proposals to keep after applying NMS
 # When FPN is used, this limit is applied per level and then again to the union
